@@ -7,7 +7,7 @@
 const http = require('http'), crypto = require('crypto'), fs = require('fs'), path = require('path'), url = require('url');
 const PORT = +process.argv[2] || +process.env.PORT || 8787;
 const ROOT = path.resolve(process.argv[3] || (fs.existsSync(path.join(__dirname, 'public')) ? path.join(__dirname, 'public') : process.cwd()));
-const MAX_PRESENCE = 4096, RATE = 40, BURST = 80, MAX_CLIENTS = +process.env.MAX_CLIENTS || 400, MAX_FRAME = 64*1024;
+const MAX_PRESENCE = 4096, RATE = 70, BURST = 140, MAX_CLIENTS = +process.env.MAX_CLIENTS || 400, MAX_FRAME = 64*1024;
 const rooms = new Map();          // room name -> Map(peer -> client)
 let clients = 0, nextPeer = 1;
 const TYPES = {'.html':'text/html; charset=utf-8', '.js':'text/javascript', '.css':'text/css', '.json':'application/json', '.png':'image/png', '.svg':'image/svg+xml', '.ico':'image/x-icon'};
@@ -33,9 +33,10 @@ server.on('upgrade', (req, sock) => {
   const name = clean(q.name, /[^\w \-]/g, 20) || 'Player', dev = clean(String(q.id || '').toLowerCase(), /[^a-z0-9]/g, 24);
   // the player id: from the browser's own random device id (so two "Player"s never collide), else from the name
   const C = {sock, peer:'k' + (nextPeer++).toString(36) + crypto.randomBytes(3).toString('hex'), by:'u-' + (dev.length >= 8 ? dev : name.toLowerCase().replace(/\s+/g, '-') + '-' + crypto.randomBytes(3).toString('hex')),
-    name, lag:Math.min(2000, +q.lag || 0), rooms:new Map(), tok:BURST, t:Date.now(), buf:Buffer.alloc(0), alive:true, pong:Date.now()};
+    name, lag:Math.min(2000, +q.lag || 0), jit:Math.min(1000, +q.jit || 0), lastAt:0, rooms:new Map(), tok:BURST, t:Date.now(), buf:Buffer.alloc(0), alive:true, pong:Date.now()};
   const raw = s => { if (C.alive) try { sock.write(s); } catch(e){} };
-  C.send = o => { const s = frame(JSON.stringify(o)); if (C.lag) setTimeout(() => raw(s), C.lag); else raw(s); };
+  // test options: ?lag= adds a fixed delay, ?jit= adds random extra delay (order is kept, like a real network)
+  C.send = o => { const s = frame(JSON.stringify(o)); if (C.lag || C.jit){ const at = Math.max(C.lastAt, Date.now() + C.lag + Math.random()*C.jit); C.lastAt = at; setTimeout(() => raw(s), at - Date.now()); } else raw(s); };
   const view = (c, rn) => ({peer:c.peer, by:c.by, presence:c.rooms.get(rn) || {}});
   // changes go out as small updates; a newcomer gets the whole room once
   const tell = (rn, msg, except) => { const r = rooms.get(rn); if (r) for (const c of r.values()) if (c !== except) c.send(msg); };
@@ -44,7 +45,7 @@ server.on('upgrade', (req, sock) => {
     const now = Date.now(); C.tok = Math.min(BURST, C.tok + (now - C.t)/1000*RATE); C.t = now; if (C.tok < 1) return; C.tok--;     // rate limit, like the platform
     let m; try { m = JSON.parse(txt); } catch(e){ return; } if (!m || typeof m !== 'object') return;
     const work = () => { if (!C.alive) return;
-      if (m.op === 'hello') C.send({op:'welcome', id:C.by, name:C.name, peer:C.peer});
+      if (m.op === 'hello') C.send({op:'welcome', id:C.by, name:C.name, peer:C.peer, now:Date.now()});
       else if (m.op === 'join' && typeof m.room === 'string' && /^[a-z0-9][a-z0-9_.-]{0,47}$/.test(m.room) && (C.rooms.has(m.room) || C.rooms.size < 17)){
         if (!rooms.has(m.room)) rooms.set(m.room, new Map()); const r = rooms.get(m.room); if (!C.rooms.has(m.room)) C.rooms.set(m.room, {});
         r.set(C.peer, C); C.send({op:'peers', room:m.room, you:C.peer, peers:[...r.values()].map(c => view(c, m.room))}); tell(m.room, {op:'upd', room:m.room, ...view(C, m.room)}, C); }

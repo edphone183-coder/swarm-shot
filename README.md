@@ -59,3 +59,15 @@ Replace `public/index.html` with the newest `swarm-shot.html` and restart, or re
 - **Cheating isn't fully prevented.** A determined player could still change their own game or save.
 - **Health check:** `/health` shows how many players are connected.
 - **Ports:** the server uses the `PORT` your host sets. To pick one yourself, run `node server.js 9000`.
+
+## Developer tools
+
+- **Network diagnostics:** press **F8** in the game, or open it with `?netdbg=1`. The overlay shows:
+  - ping;
+  - updates per second in and out;
+  - lost or merged updates;
+  - the interpolation delay;
+  - extrapolation and corrections;
+  - frame rate;
+  - simulation time.
+- **World boss test schedule:** add `?wbtest=1` to the address. A portal then opens every 4 minutes and stays open for 2.5 minutes. Without it, portals open on every UTC half hour and stay open for 10 minutes. The server sends its clock to the game, so every player sees the same event.

@@ -1615,6 +1615,14 @@ Object.assign(WG, {
   nightmarescythe:() => G.l('M14 60 L40 6','#2B2140',6) + G.p('M40 6 Q6 4 4 34 Q14 16 36 16 Z','#B05CFF') + G.l('M10 30 Q16 18 34 14','#E9DCFF',2) + G.c(40,6,4,'#F0384F',2) + G.c(24,50,3,'#F0384F',0),
 });
 for (const k of ['candycannon','puppetstrings','serpentsthunder','emperorscrystal','nightmarescythe']) GL['w_' + k] = WG[k];
+WPN.celestialrupture = {name:'Celestial Rupture', rarity:'mythic', icon:'', col:'#9B7BFF',
+  desc:'Two orbs form at your hands, a teal one that pulls and a gold one that pushes. They orbit, collide and merge into a white-violet core that you launch at the swarm. It cuts through everything in its path and bursts on impact. Level 4 adds a gravity drag along its path; level 5 a far bigger burst.',
+  ability:'Two orbs merge into one devastating core.', kind:'proj', proj:'rupture', cd:0.7, dmg:34, shots:1, spread:0.18, spd:540, range:480, pierce:0, aoe:64,
+  gun:'#5A44C8', len:1.25, wid:0.78, excl:true, boss:'wb_aeth', sfx:'grav'};
+WPN.tyrantsfang = {name:"Tyrant's Fang", rarity:'mythic', icon:'', col:'#E0283C',
+  desc:'A cutting gesture sends a fast, nearly invisible slash at the nearest enemy, leaving a thin crimson trail. Levels add a second slash, wider arcs, slashes at several targets, then rapid combinations. Every few seconds it lines up a heavy execution cut across the target area.',
+  ability:'Near-invisible slashes; a heavy execution cut.', kind:'proj', proj:'fang', cd:0.38, dmg:17, shots:1, spread:0.16, spd:900, range:440, pierce:2,
+  gun:'#4A0810', len:1.15, wid:0.7, excl:true, boss:'wb_mal', sfx:'slash'};
 const WIDS = Object.keys(WPN).filter(id => !WPN[id].fusion);
 const FUSIONS = Object.keys(WPN).filter(id => WPN[id].fusion);
 const PROJ_KINDS = new Set(['proj','dual','rail','rocket','hole','boomerang']);
@@ -3953,6 +3961,14 @@ Object.assign(GL, {
   sp_diamond:() => G.p('M32 4 L56 22 L32 60 L8 22 Z','#9BE8FF') + G.p('M8 22 H56 M20 22 L32 4 L44 22 L32 60 Z','#E6FBFF',2) + G.h(22,18,4,7,30),
   sp_nightmare:() => G.c(32,32,26,'#140A1E') + G.e(32,32,18,10,'#B05CFF',2.5) + G.c(32,32,6,'#F0384F',2) + G.p('M8 14 Q18 22 14 32 M56 14 Q46 22 50 32','none',0) + G.l('M6 18 Q16 22 14 30 M58 18 Q48 22 50 30','#7B2CFF',3),
 });
+BOSSES.wb_aeth = {name:'Aetherion, the Void Sovereign', live:true};
+BOSSES.wb_mal = {name:'Malrath, the Crimson Tyrant', live:true};
+SIGS.push(
+  {id:'s_heavenfall', name:'Infinite Expanse', boss:'wb_aeth', rarity:'mythic', icon:'sp_expanse', col:'#9B7BFF', cd:75, dur:6, wb:true, domain:true,
+    desc:'Domain. A cosmic dimension opens around you for 6s: enemies inside are heavily slowed and struck by cosmic energy every half second, and it ends in a blue-violet burst.'},
+  {id:'s_siege', name:'Crimson Dominion', boss:'wb_mal', rarity:'mythic', icon:'sp_dominion', col:'#E0283C', cd:75, dur:6, wb:true, domain:true,
+    desc:'Domain. Crimson markings spread and a war-citadel rises behind you for 6s: spectral blades cut the enemies inside in waves, and it ends in one devastating cut.'},
+);
 const SIGM = Object.fromEntries(SIGS.map(s => [s.id, s]));
 SIGS.forEach(s => { IMAP[s.id] = [s.icon]; });
 const RELICS = [
@@ -23124,10 +23140,10 @@ function netStartWs(url, name){
     };
     const tx = o => { const s = JSON.stringify(o); if (conn) ws.send(s); else queue.push(s); };
     const open = () => {
-      { const lag = new URLSearchParams(location.search).get('lag'); ws = new WebSocket(url + (url.includes('?') ? '&' : '?') + 'name=' + encodeURIComponent(name) + '&id=' + netDeviceId() + (lag ? '&lag=' + (+lag || 0) : '')); }
+      { const q = new URLSearchParams(location.search), lag = q.get('lag'), jit = q.get('jit'); ws = new WebSocket(url + (url.includes('?') ? '&' : '?') + 'name=' + encodeURIComponent(name) + '&id=' + netDeviceId() + (lag ? '&lag=' + (+lag || 0) : '') + (jit ? '&jit=' + (+jit || 0) : '')); }
       ws.onopen = () => { conn = true; NET.emitState('online'); tx({op:'hello', name}); for (const [n] of handlers) { tx({op:'join', room:n}); const p = presence.get(n); if (p) tx({op:'presence', room:n, patch:p}); } while (queue.length) ws.send(queue.shift()); };
       ws.onmessage = ev => { let m; try { m = JSON.parse(ev.data); } catch(e){ return; }
-        if (m.op === 'welcome'){ NET.me = NET.me || {id:m.id, name:m.name}; res(true); }
+        if (m.op === 'welcome'){ NET.me = NET.me || {id:m.id, name:m.name}; if (Number.isFinite(m.now) && Math.abs(m.now - Date.now()) < 864e5) NET.serverSkew = m.now - Date.now(); res(true); }
         // the server sends a room's full list once, then small changes (upd / left); keep the list here
         if (m.op === 'peers' || m.op === 'upd' || m.op === 'left'){ const h = handlers.get(m.room); if (!h) return;
           const mk = p => Object.freeze({peer:p.peer, by:p.by, isMe:p.peer === h._you, sameTab:false, kind:'viewer', guest:false, presence:Object.freeze(p.presence || {}), updatedAt:Date.now()});
@@ -23183,6 +23199,40 @@ NET.why = () => NET.err === 'not_admitted' || NET.err === 'not_granted' ? "claud
   : NET.err === 'no_platform' ? 'Online play only works when the game is opened on claude.ai (or with a game server address). This copy is running on its own.'
   : NET.err === 'revoked' ? 'Your access to this game was changed while it was open. Reload the page.'
   : NET.err ? 'The connection failed (' + NET.err + '). Try reloading the page.' : '';
+// ---------- timing for smooth remote movement ----------
+// Every update carries the sender's own clock (ts) and a sequence number (n). The receiver works out the offset between
+// the two clocks from the fastest packets it has seen, so each update is placed where it was *sent*, not where it
+// happened to *arrive*: network jitter no longer bends the motion. The playback delay adapts to the measured send
+// interval and jitter (a little behind real time is what makes interpolation smooth; too little and it stutters).
+const NCLK = () => performance.timeOrigin + performance.now();
+function netClock(){
+  const C = {off:null, lat:[], gapEma:100, delay:150, n:-1, got:0, gaps:0, dupes:0, rtt:0, rttAt:0, lastRecv:0, lastTs:0, rate:0, rateN:0, rateT:performance.now()};
+  // returns the local performance.now() time this update belongs to, or null if it is old or a duplicate
+  C.take = (ts, n) => { const now = performance.now(), recv = NCLK();
+    if (Number.isFinite(n)){ if (n <= C.n){ C.dupes++; return null; } if (C.n >= 0 && n > C.n + 1) C.gaps += n - C.n - 1; C.n = n; }
+    C.got++; C.rateN++; if (now - C.rateT > 1000){ C.rate = C.rateN*1000/(now - C.rateT); C.rateN = 0; C.rateT = now; }
+    if (!Number.isFinite(ts)) return now;
+    const l = recv - ts; C.lat.push(l); if (C.lat.length > 60) C.lat.shift();
+    const lo = Math.min(...C.lat); C.off = lo;
+    if (C.lastTs){ const g = ts - C.lastTs; if (g > 0 && g < 1000) C.gapEma = C.gapEma*0.9 + g*0.1; } C.lastTs = ts; C.lastRecv = now;
+    // jitter: how much later than the fastest packet updates arrive (90th percentile)
+    const js = C.lat.map(x => x - lo).sort((a, b) => a - b), j90 = js[Math.floor(js.length*0.9)] || 0;
+    const want = Math.max(80, Math.min(320, C.gapEma*1.25 + j90 + 20)); C.delay += (want - C.delay)*0.1;
+    return now - (recv - ts - lo);   // = when it would have arrived with no jitter
+  };
+  C.echo = () => C.lastTs ? Math.round(C.lastTs + (NCLK() - (performance.timeOrigin + C.lastRecv))) : 0;   // their ts, plus how long we held it
+  C.gotEcho = ec => { if (ec > 0){ const r = NCLK() - ec; if (r >= 0 && r < 5000){ C.rtt = C.rtt ? C.rtt*0.8 + r*0.2 : r; C.rttAt = performance.now(); } } };
+  return C;
+}
+// sample a buffer of {t, s} at local time t: interpolate between neighbours, extrapolate a little past the newest
+function netSample(buf, t, lerp, maxEx=150){
+  if (!buf.length) return null; if (t <= buf[0].t) return buf[0].s;
+  for (let i=buf.length - 1;i>=0;i--){ const a = buf[i]; if (a.t > t) continue; const c = buf[i + 1];
+    if (c) return lerp(a.s, c.s, (t - a.t)/Math.max(1, c.t - a.t));
+    const p = buf[i - 1]; if (!p || t - a.t > maxEx) return a.s; NET_DIAG.ex++;
+    return lerp(p.s, a.s, 1 + Math.min(maxEx, t - a.t)/Math.max(1, a.t - p.t)); }
+  return buf[buf.length - 1].s; }
+const NET_DIAG = {ex:0, snap:0};
 
 // =====================================================================
 // MULTIPLAYER · SHARED OPEN WORLD
@@ -23258,12 +23308,12 @@ function mpOnInstance(list){
     let R = MPW.remotes.get(p.id); if (!R){ R = {id:p.id, buf:[], look:null, nm:'Player', lv:1}; MPW.remotes.set(p.id, R); }
     if (typeof p.pres.nm === 'string') R.nm = NET.nameOf(p.id, mpClean(p.pres.nm)); if (typeof p.pres.lv === 'number') R.lv = Math.max(1, Math.min(999, p.pres.lv|0));
     if (p.pres.lk && typeof p.pres.lk === 'object') R.look = p.pres.lk;
-    if (s && typeof s === 'object' && Number.isFinite(s.x) && Number.isFinite(s.y) && s.n !== R.lastN){ R.lastN = s.n; R.buf.push({t:performance.now(), s}); if (R.buf.length > 20) R.buf.shift(); } }
+    if (s && typeof s === 'object' && Number.isFinite(s.x) && Number.isFinite(s.y) && s.n !== R.lastN){ R.lastN = s.n; if (!R.clk) R.clk = netClock(); const lt = R.clk.take(s.ts, s.n) ?? performance.now(); R.buf.push({t:lt, s}); if (R.buf.length > 20) R.buf.shift(); } }
   for (const id of [...MPW.remotes.keys()]) if (!seen.has(id)) MPW.remotes.delete(id);
   mpChip();
 }
 // interpolated state 120 ms in the past; a short extrapolation if packets are late
-function mpSample(R, now){ const b = R.buf; if (!b.length) return null; const t = now - 120;
+function mpSample(R, now){ const b = R.buf; if (!b.length) return null; const t = now - (R.clk ? R.clk.delay : 140);
   if (t <= b[0].t) return b[0].s;
   for (let i=b.length - 1;i>=0;i--){ if (b[i].t <= t){ const a = b[i], c = b[i + 1]; if (!c){ const dt = Math.min(0.25, (t - a.t)/1000); return Object.assign({}, a.s, {x:a.s.x + (a.s.vx || 0)*dt, y:a.s.y + (a.s.vy || 0)*dt}); }
       const k = (t - a.t)/Math.max(1, c.t - a.t), L = (p, q) => p + (q - p)*k, da = ((c.s.a - a.s.a + Math.PI*3) % (Math.PI*2)) - Math.PI;
@@ -23274,9 +23324,9 @@ function mpSample(R, now){ const b = R.buf; if (!b.length) return null; const t 
 let MP_N = 0;
 function mpTick(dt){
   if (!MPW.on || !MPW.instRoom || state !== 'world' || !OW.p) return;
-  MPW.sendT -= dt; if (MPW.sendT > 0) return; MPW.sendT = 0.1;
+  MPW.sendT -= dt; if (MPW.sendT > 0) return; MPW.sendT = 1/12;
   const P0 = OW.p, R = OW.ride, riding = typeof owRiding === 'function' && owRiding() && R && R.st === 'riding';
-  const s = {n:++MP_N, x:Math.round(P0.x), y:Math.round(P0.y), vx:Math.round(P0.vx || 0), vy:Math.round(P0.vy || 0), a:+(P0.aim || 0).toFixed(2), mv:P0.moving ? 1 : 0, wk:+((P0.walk || 0) % 100).toFixed(2),
+  const s = {n:++MP_N, ts:Math.round(NCLK()), x:Math.round(P0.x), y:Math.round(P0.y), vx:Math.round(P0.vx || 0), vy:Math.round(P0.vy || 0), a:+(P0.aim || 0).toFixed(2), mv:P0.moving ? 1 : 0, wk:+((P0.walk || 0) % 100).toFixed(2),
     in:OW.inside ? OW.inside.B.id : '', rd:riding ? [R.id, +(R.run || 0).toFixed(2), R.face < 0 ? -1 : 1, +R.flip.toFixed(2)] : 0, hp:Math.round((P0.hp/Math.max(1, OW.st.maxHp || 100))*100), pt:(typeof PARTY !== 'undefined' && PARTY.id) || 0};
   const patch = {s, nm:mpMyName(), lv:(save.acct && save.acct.lv) || 1};
   const lk = mpLook(), sig = JSON.stringify(lk); if (sig !== MPW.lookSig || MPW.pendingLook){ MPW.lookSig = sig; MPW.pendingLook = false; patch.lk = lk; }
@@ -23696,10 +23746,11 @@ function duoOffer(w, s, endless, launch){
   if (p && p.pres.st === 'dungeon') return toast('info', duoMateName() + ' is in a dungeon', 'Wait for them to finish, or switch to Solo.');
   const sid = (PARTY.id + '-' + Date.now().toString(36)).toLowerCase().replace(/[^a-z0-9-]/g, '').slice(-30);
   const cfg = {sid, w, s, en:!!endless, diff:save.diff};
+  if (DUO.wbNext){ cfg.wb = DUO.wbNext; DUO.wbNext = null; }
   DUO.offer = {cfg, launch, t:Date.now()};
   NET.lobby.send(PARTY.mate.id, 'dgs', cfg);
   const {body, close} = mpModal('duoWait', 'Starting Duos');
-  const p1 = document.createElement('p'); p1.textContent = `${WORLDS[w].name} · ${endless ? 'Endless' : 'Stage ' + s} · ${DIFF[save.diff].name}. Waiting for ${duoMateName()} to join…`; body.appendChild(p1);
+  const p1 = document.createElement('p'); p1.textContent = `${cfg.wb ? 'World boss: ' + WB_BOSS[cfg.wb.b].name : WORLDS[w].name + ' · ' + (endless ? 'Endless' : 'Stage ' + s)} · ${DIFF[save.diff].name}. Waiting for ${duoMateName()} to join…`; body.appendChild(p1);
   const p2 = document.createElement('p'); p2.className = 'mpnote'; body.appendChild(p2);
   const bar = document.createElement('div'); bar.className = 'mpbar'; bar.appendChild(mpBtn('Cancel', () => { duoCancelOffer(); close(); })); bar.appendChild(mpBtn('Go solo instead', () => { duoCancelOffer(); close(); DUO.starting = true; try { launch(); } finally { DUO.starting = false; } })); body.appendChild(bar);
   const tick = setInterval(() => { if (!DUO.offer || DUO.offer.cfg.sid !== sid){ clearInterval(tick); return; } const left = 25 - Math.floor((Date.now() - DUO.offer.t)/1000); p2.textContent = `The invite expires in ${left}s.`; if (left <= 0){ clearInterval(tick); duoCancelOffer(); close(); toast('info', 'No answer', duoMateName() + " didn't join. You can try again or go solo."); } }, 250);
@@ -23708,19 +23759,20 @@ function duoCancelOffer(){ if (DUO.offer && PARTY.mate) NET.lobby.send(PARTY.mat
 function duoIncoming(from, cfg, nm){
   if (!PARTY.mate || from !== PARTY.mate.id || PARTY.leader !== from) return;
   if (!cfg || typeof cfg.sid !== 'string' || !/^[a-z0-9-]{4,30}$/.test(cfg.sid) || !WORLDS[cfg.w] || !(cfg.s >= 1 && cfg.s <= 10) || !DIFF[cfg.diff]) return;
+  if (cfg.wb != null && !(cfg.wb && typeof WB_BOSS !== 'undefined' && WB_BOSS[cfg.wb.b] && Number.isInteger(cfg.wb.ev))) return;
   const busy = DUO.on || mpInRun();
   if (busy) return NET.lobby.send(from, 'dgn', {sid:cfg.sid, why:'busy'});
   if (!worldUnlocked(cfg.w)) return NET.lobby.send(from, 'dgn', {sid:cfg.sid, why:'locked'});
   const join = () => { const o = document.getElementById('duoAsk'); if (o) o.remove(); NET.lobby.send(from, 'dga', {sid:cfg.sid}); duoBegin('guest', cfg); duoLaunchGuest(cfg); };
   if (PARTY.ready) return join();
   const {body, close} = mpModal('duoAsk', 'Duos run');
-  const p = document.createElement('p'); p.textContent = `${nm} is starting ${WORLDS[cfg.w].name} · ${cfg.en ? 'Endless' : 'Stage ' + cfg.s} on ${DIFF[cfg.diff].name}. Join?`; body.appendChild(p);
+  const p = document.createElement('p'); p.textContent = cfg.wb ? `${nm} is entering the world boss portal: ${WB_BOSS[cfg.wb.b].name}, on ${DIFF[cfg.diff].name}. Join the fight?` : `${nm} is starting ${WORLDS[cfg.w].name} · ${cfg.en ? 'Endless' : 'Stage ' + cfg.s} on ${DIFF[cfg.diff].name}. Join?`; body.appendChild(p);
   const bar = document.createElement('div'); bar.className = 'mpbar'; bar.appendChild(mpBtn('Join', join, 'go')); bar.appendChild(mpBtn('Not now', () => { close(); NET.lobby.send(from, 'dgn', {sid:cfg.sid, why:'no'}); })); body.appendChild(bar);
   setTimeout(() => { const o = document.getElementById('duoAsk'); if (o) o.remove(); }, 25000);
 }
 function duoLaunchGuest(cfg){
   DUO.prevDiff = save.diff; save.diff = cfg.diff;
-  const launch = () => { DUO.starting = true; try { startStage(cfg.w, cfg.s, cfg.en); } finally { DUO.starting = false; } };
+  const launch = () => { DUO.starting = true; try { if (cfg.wb && typeof wbStartArena === 'function') wbStartArena(cfg.wb.b, cfg.wb.ev, cfg.w); else startStage(cfg.w, cfg.s, cfg.en); } finally { DUO.starting = false; } };
   if (owIn() && OW.map && OW.p){ const sv = owSave(); sv.ret = {region:OW.map.i, x:OW.p.x, y:OW.p.y}; sv.region = OW.map.i; sv.x = OW.p.x; sv.y = OW.p.y; try { owFogStore(OW.map); } catch(e){} persist(); OW.launching = true; owLeave(); try { launch(); } finally { OW.launching = false; } }
   else { document.querySelectorAll('.mpov').forEach(o => o.remove()); launch(); }
 }
@@ -23760,7 +23812,7 @@ function duoPanelToggle(m){
 { const _do = duoOffer; duoOffer = function(w, s, en, launch){ if (owIn() && DUO.pickW != null){ w = DUO.pickW; s = DUO.pickS; en = DUO.pickE; } return _do.call(this, w, s, en, launch); }; }
 // ---------- session ----------
 async function duoBegin(role, cfg){
-  duoEnd('restart'); Object.assign(DUO, {on:true, role, cfg, sid:cfg.sid, mate:PARTY.mate ? PARTY.mate.id : null, revLeft:2, down:null, dead:false, rv:0, vote:null, flowSeen:0, flow:{id:0}, pauseT:0, lostT:0, endAt:0, solo:false, gotHost:false, joinT:performance.now()});
+  duoEnd('restart'); DUO.clk = netClock(); DUO.myN = 0; Object.assign(DUO, {on:true, role, cfg, sid:cfg.sid, mate:PARTY.mate ? PARTY.mate.id : null, revLeft:2, down:null, dead:false, rv:0, vote:null, flowSeen:0, flow:{id:0}, pauseT:0, lostT:0, endAt:0, solo:false, gotHost:false, joinT:performance.now()});
   DUO.mir.clear(); DUO.defs.clear(); DUO.snaps = []; DUO.lastQ = -1; DUO.lastPQ = -1; DUO.dm.clear(); DUO.dmT.clear(); DUO.seenDead.clear(); DUO.epSeen.clear(); DUO.znSeen.clear(); DUO.bnSeen = 0; DUO.pbuf = []; DUO.pl = null; DUO.lkSent = '';
   DUO.gDmg.clear(); DUO.lastGuestQ = -1; DUO.deadQ = []; DUO.bnQ = []; DUO.nid = 0; DUO.seq = 0; DUO.pseq = 0; DUO.dseq = 0; DUO.lastDQ = 0; DUO.gAck = 0; DUO.gPack = 0; DUO.need = ''; DUO.defsSent = -1;
   try { DUO.room = await NET.join('dg-' + cfg.sid); DUO.proom = await NET.join('dgp-' + cfg.sid); DUO.droom = await NET.join('dgd-' + cfg.sid); } catch(err){ console.error(err); toast('info', "Couldn't connect the Duos run", 'Playing solo.'); duoEnd('join failed'); return; }
@@ -23798,7 +23850,7 @@ function duoHostSnap(){
     en += e._k + dpx(e.x, W) + dpx(e.y, H) + D64[hp] + denc(fl, 2); }
   const tnow = run.t; DUO.deadQ = DUO.deadQ.filter(d => tnow - d[2] < 3);
   const flow = {t:Math.round(run.t*100)/100, ph:run.phase, st:run.stage, dur:Number.isFinite(run.dur) ? run.dur : -1, ot:Math.round((run.overtime || 0)*10)/10, co:Math.round(run.corr*10)/10, pu:run.pushes || 0, bd:run.bossDead ? 1 : 0, f:DUO.flow};
-  return {q, en, dd:DUO.deadQ.slice(-60).map(d => d[0]).join(''), bn:DUO.bnQ.slice(-3), fl:flow};
+  return {q, ts:Math.round(NCLK()), en, dd:DUO.deadQ.slice(-60).map(d => d[0]).join(''), bn:DUO.bnQ.slice(-3), fl:flow};
 }
 // enemy descriptions: sent for brand-new enemies, and again whenever the partner says it is missing some
 function duoHostDefs(){
@@ -23824,7 +23876,8 @@ function duoHostProj(){
 }
 // both sides: my own character for the partner to draw and to aim at
 function duoMe(){
-  const lk = mpLook(), sig = JSON.stringify(lk), o = {x:dqx(P.x), y:dqy(P.y), a:Math.round((P.aim || 0)*100)/100, hp:Math.round(Math.max(0, P.hp)/Math.max(1, P.maxHp)*100), mv:P.moving ? 1 : 0, wk:Math.round(((P.walk || 0) % 100)*10)/10,
+  DUO.myN = (DUO.myN || 0) + 1;
+  const lk = mpLook(), sig = JSON.stringify(lk), o = {ts:Math.round(NCLK()), n:DUO.myN, ec:DUO.clk ? DUO.clk.echo() : 0, x:dqx(P.x), y:dqy(P.y), a:Math.round((P.aim || 0)*100)/100, hp:Math.round(Math.max(0, P.hp)/Math.max(1, P.maxHp)*100), mv:P.moving ? 1 : 0, wk:Math.round(((P.walk || 0) % 100)*10)/10,
     f:run && (performance.now() - (DUO.lastShot || 0)) < 250 ? 1 : 0, w:wpn || save.weapon, dn:DUO.down ? Math.max(1, Math.ceil(DUO.down.t)) : 0, dd:DUO.dead ? 1 : 0, rv:Math.round(DUO.rv*100)/100,
     vt:DUO.vote, vid:DUO.clearId, pz:duoMenuOpen() ? 1 : 0, lv:run ? run.level : 1, nm:mpMyName(), end:DUO.endAt ? 1 : 0};
   if (sig !== DUO.lkSent){ DUO.lkSent = sig; o.lk = lk; DUO.lkT = performance.now(); } else if (performance.now() - (DUO.lkT || 0) > 3000){ o.lk = lk; DUO.lkT = performance.now(); }
@@ -23833,7 +23886,7 @@ function duoMe(){
 const duoMenuOpen = () => !!(run && state !== 'play' && !['clear', 'results', 'dying', 'menu'].includes(state));
 function duoSend(dt){
   if (!DUO.on || !DUO.room || !run) return;
-  DUO.sendT -= dt; if (DUO.sendT > 0) return; DUO.sendT = 0.1;
+  DUO.sendT -= dt; if (DUO.sendT > 0) return; DUO.sendT = Math.max(0.01, DUO.sendT + 1/15); DUO.outN = (DUO.outN || 0) + 1;
   try {
     if (DUO.role === 'host'){ DUO.room.set({pl:duoMe(), h:duoHostSnap(), ga:DUO.lastGuestQ}); { const pj = duoHostProj(), sig = pj.ea + '|' + pj.za + '|' + pj.ep.length + '|' + pj.zd.length; if (pj.ep.length || pj.zd.length || sig !== DUO.pjSig || performance.now() - (DUO.pjAt || 0) > 1000){ DUO.pjSig = sig; DUO.pjAt = performance.now(); DUO.proom.set({p:pj}); } else DUO.pseq--; } const d = duoHostDefs(); if (Object.keys(d.d).length || DUO.defsSent !== 0){ DUO.droom.set({d}); DUO.defsSent = Object.keys(d.d).length; } }
     else { // damage as running totals: "key:total[,freeze,slow];"
@@ -23848,7 +23901,8 @@ function duoOnMain(list){
   if (!DUO.on) return; const p = duoPeerFor(list);
   if (!p){ if (!DUO.lostT && DUO.gotPeer) DUO.lostT = performance.now(); return; }
   DUO.gotPeer = true; DUO.lostT = 0; const pr = p.pres || {};
-  if (pr.pl && typeof pr.pl === 'object'){ const s = pr.pl; if (Number.isFinite(s.x) && Number.isFinite(s.y)){ DUO.pbuf.push({t:performance.now(), s}); if (DUO.pbuf.length > 12) DUO.pbuf.shift(); }
+  if (pr.pl && typeof pr.pl === 'object'){ const s = pr.pl; if (!DUO.clk) DUO.clk = netClock(); const lt = Number.isFinite(s.n) ? DUO.clk.take(s.ts, s.n) : (s === DUO.pl ? null : performance.now()); if (lt != null && s.ec) DUO.clk.gotEcho(s.ec);
+    if (lt != null && Number.isFinite(s.x) && Number.isFinite(s.y)){ DUO.pbuf.push({t:lt, s}); if (DUO.pbuf.length > 16) DUO.pbuf.shift(); }
     if (s.lk && typeof s.lk === 'object') DUO.lk = s.lk; DUO.pl = s; DUO.plAt = performance.now(); }
   if (DUO.role === 'guest' && pr.h) duoGuestApply(pr.h);
   if (DUO.role === 'host' && pr.g) duoHostApply(pr.g);
@@ -23884,7 +23938,8 @@ function duoGuestApply(h){
   if (typeof h.q !== 'number' || h.q <= DUO.lastQ) return;
   DUO.lastQ = h.q; DUO.gotHost = true; DUO.hostAt = performance.now();
   const list = new Map(), hW = 1, hH = 1; if (typeof h.en === 'string') for (let i=0;i + 10 <= h.en.length && i < 4000;i += 10){ const r = h.en.slice(i, i + 10); list.set(r.slice(0, 3), [r.slice(3, 5), r.slice(5, 7), D64I[r[7]] || 0, ddec(r.slice(8, 10)) || 0]); }
-  DUO.snaps.push({t:performance.now(), list}); while (DUO.snaps.length > 6) DUO.snaps.shift();
+  const lt = DUO.clk && DUO.clk.off != null && Number.isFinite(h.ts) ? performance.now() - (NCLK() - h.ts - DUO.clk.off) : performance.now();
+  DUO.snaps.push({t:lt, list}); while (DUO.snaps.length > 8) DUO.snaps.shift();
   if (!run) return;
   const C2 = duoFromHost();
   // enemies that died on the host: your own loot drops here
@@ -23920,9 +23975,11 @@ function duoGuestProj(p){
 }
 // guest, every frame before the simulation: move mirrors to where the host had them 110 ms ago
 function duoGuestInterp(){
-  const sn = DUO.snaps; if (sn.length < 1) return; const C2 = duoFromHost(), t = performance.now() - 110;
+  const sn = DUO.snaps; if (sn.length < 1) return; const C2 = duoFromHost(), t = performance.now() - duoDelay();
   let a = sn[0], b = null; for (let i=sn.length - 1;i>=0;i--){ if (sn[i].t <= t){ a = sn[i]; b = sn[i + 1] || null; break; } }
-  const k = b ? Math.max(0, Math.min(1, (t - a.t)/Math.max(1, b.t - a.t))) : 0, now = performance.now();
+  // past the newest snapshot (a late packet): keep moving along the last two snapshots for up to 150 ms instead of freezing
+  if (!b && sn.length > 1 && a === sn[sn.length - 1] && t - a.t < 150){ b = a; a = sn[sn.length - 2]; NET_DIAG.ex++; }
+  const k = b ? Math.max(0, Math.min(2.5, (t - a.t)/Math.max(1, b.t - a.t))) : 0, now = performance.now();
   for (const [id, e] of DUO.mir){ if (e.dead) continue; const p = a.list.get(id), q = b && b.list.get(id), v = p || q; if (!v) continue;
     const ax = dunpx(v[0], W), ay = dunpx(v[1], H), nx = q && p ? dunpx(p[0], W) + (dunpx(q[0], W) - dunpx(p[0], W))*k : ax, ny = q && p ? dunpx(p[1], H) + (dunpx(q[1], H) - dunpx(p[1], H))*k : ay; e.dirx = nx - e.x; e.diry = ny - e.y; const dl = Math.hypot(e.dirx, e.diry); if (dl > 0.01){ e.dirx /= dl; e.diry /= dl; } else { e.dirx = 0; e.diry = 1; }
     e.x = nx; e.y = ny;
@@ -23957,11 +24014,9 @@ if (typeof thBossFx === 'function'){ const _tb = thBossFx; thBossFx = function()
 function duoGhostLive(){ return !!(DUO.pl && !DUO.pl.dd && !DUO.pl.dn && !DUO.solo && performance.now() - DUO.plAt < 3000); }
 function duoAsGhost(fn){ const x = P.x, y = P.y; P.x = DUO.ghost.x; P.y = DUO.ghost.y; try { return fn(); } finally { P.x = x; P.y = y; } }
 // the partner's character, interpolated
+function duoDelay(){ return DUO.clk ? DUO.clk.delay : 150; }
 function duoPartnerSample(){
-  const b = DUO.pbuf; if (!b.length) return null; const t = performance.now() - 110; let a = b[0], c = null;
-  for (let i=b.length - 1;i>=0;i--){ if (b[i].t <= t){ a = b[i]; c = b[i + 1] || null; break; } }
-  if (!c) return a.s; const k = Math.max(0, Math.min(1, (t - a.t)/Math.max(1, c.t - a.t)));
-  return Object.assign({}, c.s, {x:a.s.x + (c.s.x - a.s.x)*k, y:a.s.y + (c.s.y - a.s.y)*k}); }
+  return netSample(DUO.pbuf, performance.now() - duoDelay(), (a, c, k) => Object.assign({}, k < 1 ? a : c, {x:a.x + (c.x - a.x)*k, y:a.y + (c.y - a.y)*k}), 150); }
 // ---------- downed, revive, bleed out ----------
 { const _die = die; die = function(){
     if (DUO.on && run && !DUO.endAt){
@@ -24072,7 +24127,7 @@ setInterval(() => { try {
     duoDownTick(dt);
     return r; }; }
 // send on a clock, not on frames (a hidden tab draws nothing)
-setInterval(() => { try { if (DUO.on && run) duoSend(0.1); } catch(e){ console.error(e); } }, 100);
+{ let last = performance.now(); setInterval(() => { const n = performance.now(), dt = Math.min(0.25, (n - last)/1000); last = n; try { if (DUO.on && run) duoSend(dt); } catch(e){ console.error(e); } }, 33); }   // 15 updates a second (also while a menu is open)
 // ---------- drawing the partner ----------
 function duoDrawPartner(now){
   if (!DUO.on || !DUO.pl) return; const s = duoPartnerSample(); if (!s) return; const lk = DUO.lk || {};
@@ -24542,6 +24597,1272 @@ function mountTrailDraw(c, R, now, layer){
 { const _mv = owMove; owMove = function(m, ent, dx, dy, r){
     if (ent === OW.p && r > 15 && OW.ride && OW.ride.st !== 'off'){ const moved = _mv.call(this, m, ent, dx, dy, r); return moved || _mv.call(this, m, ent, dx, dy, 15); }
     return _mv.apply(this, arguments); }; }
+
+// =====================================================================
+// WORLD BOSSES · sound. Every sound here is synthesised in code with the game's own audio engine (AD/AS), so it is
+// original and licence-free, and it goes through the existing mixer: voice limits, per-key cooldowns, priorities,
+// the combat level governor and ducking. Long effects are built as one timeline that matches the animation it plays
+// with (e.g. the Celestial Rupture cast: pull hum 0.00 s, push tone 0.15 s, orbit 0.30 s, silence 0.45 s, form 0.50 s,
+// launch 0.65 s), so sound and picture are started together and cannot drift.
+// =====================================================================
+const WBA = {
+  // a pitched hum that slides, with a soft attack: used for gravity and pressure tones
+  hum(len, f0, f1, tau, type='sine', a=0.05){ return AD.atk(AD.expd(AD.osc(len, AD.sweep(f0, f1, tau), type), len*0.7), a); },
+  // air pulled inward: filtered noise whose band falls and whose level swells
+  suck(len, sd, fHi=2600, fLo=300){ const n = AD.biq(AD.noise(len, sd), 'bp', AD.lin(fHi, fLo, len), 1.6); const out = new Float32Array(n.length); for (let i=0;i<n.length;i++){ const t = i/n.length; out[i] = n[i]*t*t; } return out; },
+  // pressure building: noise and a tone that rise together
+  rise(len, sd, f0, f1){ const n = AD.biq(AD.noise(len, sd), 'bp', AD.lin(f0*4, f1*4, len), 2.2), o = AD.osc(len, AD.lin(f0, f1, len), 'saw'); const out = new Float32Array(n.length); for (let i=0;i<n.length;i++){ const t = i/n.length; out[i] = (n[i]*0.6 + o[i]*0.12*t)*t*t; } return AD.lp(out, 3200, 0.7); },
+  // a short, very bright air slice
+  slice(len, sd, f=5200){ return AD.env(AD.biq(AD.noise(len, sd), 'bp', AD.sweep(f*1.6, f*0.55, len*0.4), 3), 0.002, len*0.25, 0, len*0.5); },
+  // amplitude wobble whose rate changes over time (rate: number or function of seconds)
+  amv(x, rate, depth){ const sr = AD.sr, fn = typeof rate === 'function' ? rate : () => rate; let ph = 0; for (let i=0;i<x.length;i++){ ph += fn(i/sr)/sr; x[i] *= 1 - depth*0.5*(1 + Math.sin(6.283185307*ph)); } return x; },
+  crystal(len, f, sd){ return AS.sines(len, [f, f*1.5, f*2.01, f*2.76], len*0.3, 0.012); },
+  boom(len, f0, sd, amp=1){ return AD.mix(AD.buf(len).length, [AS.thump(f0, f0*0.35, len*0.15, len, 1), amp], [AD.expd(AD.lp(AD.noise(len, sd), 900, 0.7), len*0.25), 0.55*amp], [AD.expd(AD.hp(AD.noise(len*0.4, sd + 1), 2400, 0.7), 0.05), 0.35*amp]); },
+};
+if (typeof AU !== 'undefined' && AU.def){
+  const D = AU.def, L = s => AD.buf(s).length;
+  // ---------- Aetherion ----------
+  D('wb_pull', () => AD.mix(L(1.4), [WBA.hum(1.4, 220, 48, 0.6), 0.55], [WBA.suck(1.0, 11), 0.5], [WBA.crystal(0.5, 2600, 3), 0.12, 0.35], [WBA.crystal(0.4, 3100, 4), 0.1, 0.8]));
+  D('wb_implode', () => AD.mix(L(1.3), [WBA.suck(0.18, 12, 4000, 600), 0.6], [AS.thump(140, 32, 0.12, 0.9, 1), 1, 0.16], [AD.expd(AD.lp(AD.noise(0.6, 13), 500, 0.8), 0.18), 0.5, 0.16], [WBA.crystal(0.7, 1800, 5), 0.18, 0.2]));
+  D('wb_push_charge', () => AD.mix(L(1.0), [WBA.rise(0.95, 21, 70, 260), 0.8], [WBA.amv(WBA.hum(0.95, 90, 180, 0.6, 'tri'), 18, 0.6), 0.35]));
+  D('wb_push_blast', () => AD.mix(L(1.6), [WBA.boom(1.0, 120, 22, 1), 1], [AD.env(AD.biq(AD.noise(1.4, 23), 'bp', AD.sweep(500, 3800, 0.5), 0.9), 0.01, 0.3, 0.3, 0.9), 0.45]));
+  // convergence: two tones arrive, overlap and accelerate, cut to near-silence, then form / launch (one timeline, 1.6 s)
+  D('wb_conv', () => { const a = WBA.amv(WBA.hum(1.15, 160, 120, 2, 'sine', 0.06), AD.lin(3, 22, 1.1), 0.5), b = WBA.amv(WBA.hum(0.95, 330, 480, 2, 'tri', 0.06), AD.lin(4, 30, 0.9), 0.5);
+    const cut = x => { const n = Math.round(1.15*AD.sr); for (let i=Math.round(1.05*AD.sr);i<n && i<x.length;i++) x[i] *= 1 - (i - 1.05*AD.sr)/(0.1*AD.sr); for (let i=n;i<x.length;i++) x[i] = 0; return x; };
+    return AD.mix(L(2.4), [cut(a), 0.5], [cut(b), 0.32, 0.2], [cut(WBA.suck(1.15, 31, 3000, 500)), 0.3], [AS.thump(90, 30, 0.2, 1.0, 1), 1, 1.2], [WBA.crystal(0.9, 2200, 7), 0.25, 1.2], [WBA.hum(0.9, 70, 55, 1, 'saw', 0.01), 0.15, 1.2]); });
+  D('wb_conv_launch', () => AD.mix(L(1.4), [AD.env(AD.biq(AD.noise(0.6, 41), 'bp', AD.sweep(300, 2400, 0.12), 0.8), 0.003, 0.2, 0, 0.3), 0.8], [AD.lp(AD.osc(1.2, AD.sweep(110, 52, 0.4), 'saw'), 600, 0.9), 0.35], [AS.thump(70, 40, 0.2, 0.6, 1), 0.6]));
+  D('wb_conv_impact', () => AD.mix(L(2.4), [WBA.slice(0.08, 51, 3000), 0.6], [WBA.boom(1.4, 95, 52, 1.1), 1, 0.02], [AD.env(AD.biq(AD.noise(2.0, 53), 'bp', AD.sweep(1800, 300, 0.8), 0.7), 0.02, 0.4, 0.25, 1.4), 0.3, 0.05], [WBA.crystal(1.6, 1200, 9), 0.12, 0.3]), {peak:0.95});
+  D('wb_barrier', () => AD.mix(L(0.6), [WBA.amv(WBA.hum(0.5, 520, 380, 1, 'sine', 0.02), 9, 0.7), 0.4], [WBA.crystal(0.4, 3400, 61), 0.08]));
+  D('wb_star', () => AD.mix(L(0.9), [WBA.slice(0.25, 71, 6000), 0.25], [AS.thump(200, 60, 0.05, 0.4, 1), 0.6, 0.05], [WBA.crystal(0.6, 2400, 72), 0.12, 0.05]));
+  // domain: near-silence, reversed air rising, a huge spatial impact, then a held cosmic hum
+  D('wb_domain_aeth', () => { const rev = WBA.suck(1.0, 81, 5000, 800); return AD.mix(L(4.2), [rev, 0.35, 0.4], [AS.thump(70, 25, 0.5, 2.0, 1), 1, 1.4], [AD.expd(AD.lp(AD.noise(2.0, 82), 700, 0.6), 0.6), 0.5, 1.4], [WBA.crystal(2.2, 900, 83), 0.18, 1.45], [AD.tail(AD.atk(WBA.amv(AD.osc(2.6, 55, 'sine'), 0.7, 0.5), 0.6), 1.2), 0.4, 1.6]); }, {peak:0.95});
+  D('wb_domain_end', () => AD.mix(L(2.0), [WBA.hum(1.0, 600, 60, 0.4, 'tri', 0.01), 0.35], [WBA.boom(1.2, 110, 91, 1.1), 1, 0.85], [WBA.crystal(0.9, 2000, 92), 0.2, 0.9]));
+  // ---------- Malrath ----------
+  D('wb_rend', () => AD.mix(L(0.5), [WBA.slice(0.14, 101, 6400), 0.9], [WBA.slice(0.12, 102, 3600), 0.4, 0.01], [AS.sines(0.3, [1900, 2850], 0.08, 0.004), 0.12, 0.02], [AS.click(0.02, 3000, 103), 0.5, 0.11]));
+  D('wb_rend2', () => AD.mix(L(0.5), [WBA.slice(0.13, 104, 7200), 0.9], [WBA.slice(0.11, 105, 4200), 0.4, 0.012], [AS.sines(0.3, [2100, 3300], 0.08, 0.004), 0.12, 0.02], [AS.click(0.02, 3600, 106), 0.5, 0.1]));
+  D('wb_cleave', () => AD.mix(L(1.3), [WBA.rise(0.42, 111, 80, 200), 0.6], [WBA.slice(0.2, 112, 4800), 1, 0.45], [AS.thump(110, 40, 0.1, 0.7, 1), 0.9, 0.47], [AD.expd(AD.lp(AD.noise(0.5, 113), 800, 0.7), 0.12), 0.4, 0.47]));
+  D('wb_fire_charge', () => { const n = AD.lp(WBA.amv(AD.noise(1.0, 121), 13, 0.5), 900, 0.8); return AD.mix(L(1.0), [AD.atk(n, 0.7), 0.7], [AD.atk(AD.osc(1.0, AD.lin(60, 110, 1), 'saw'), 0.8), 0.12]); });
+  D('wb_fire_boom', () => AD.mix(L(2.2), [WBA.boom(1.2, 90, 131, 1.1), 1], [AD.env(AD.lp(WBA.amv(AD.noise(2.0, 132), 17, 0.6), 1400, 0.7), 0.05, 0.4, 0.3, 1.3), 0.35, 0.1], [AS.click(0.03, 2600, 133), 0.4, 0.3], [AS.click(0.03, 3300, 134), 0.3, 0.55]));
+  // Blade Tempest: one grouped rhythm per wave instead of a sound per blade
+  D('wb_blades', () => { const parts = []; for (let i=0;i<6;i++) parts.push([WBA.slice(0.1, 141 + i, 4200 + (i % 3)*900), i === 5 ? 0.9 : 0.45 + 0.05*i, i*0.075]); parts.push([AS.thump(120, 50, 0.06, 0.4, 1), 0.5, 0.45]); return AD.mix(L(1.0), ...parts); });
+  D('wb_blades_form', () => { const parts = []; for (let i=0;i<5;i++) parts.push([AS.sines(0.35, [880 + i*110, 1320 + i*160], 0.12, 0.01), 0.12, i*0.09]); parts.push([WBA.amv(WBA.hum(0.9, 140, 110, 1, 'tri', 0.05), 11, 0.5), 0.2]); return AD.mix(L(1.1), ...parts); });
+  D('wb_citadel', () => AD.mix(L(3.4), [AD.atk(AD.lp(AD.noise(2.4, 151), 220, 0.9), 0.9), 0.9], [AS.thump(55, 26, 0.6, 2.2, 1), 1, 1.0], [WBA.amv(WBA.hum(2.6, 98, 92, 4, 'saw', 0.4), 5, 0.4), 0.16, 0.3], [AS.bell ? AS.bell(196, 1.6, 2.76, 1.3, 3) : null, 0.12, 1.0]), {peak:0.95});
+  D('wb_final_slash', () => AD.mix(L(2.0), [WBA.rise(0.6, 161, 90, 400), 0.5], [WBA.slice(0.35, 162, 5200), 1, 0.62], [WBA.slice(0.3, 163, 2400), 0.6, 0.64], [WBA.boom(1.2, 80, 164, 1.1), 1, 0.66]), {peak:0.95});
+  D('wb_event', () => AD.mix(L(2.6), [AS.thump(65, 30, 0.4, 1.6, 1), 0.8], [AS.sines(1.6, [392, 587, 784], 0.6, 0.12), 0.22, 0.05], [AS.sines(1.4, [523, 784, 1046], 0.6, 0.1), 0.18, 0.45], [WBA.crystal(1.2, 1568, 171), 0.1, 0.9]));
+  // ---------- player weapons and powers ----------
+  // Celestial Rupture cast, 0.65 s timeline that matches the two-orb animation (see wb_items.js)
+  D('w_rupture', () => { const a = WBA.hum(0.5, 150, 120, 1, 'sine', 0.01), b = WBA.hum(0.32, 300, 420, 1, 'tri', 0.01);
+    const cut = (x, s) => { const e0 = Math.round(0.45*AD.sr) - Math.round(s*AD.sr); for (let i=Math.max(0, e0);i<x.length;i++) x[i] *= Math.max(0, 1 - (i - e0)/(0.03*AD.sr)); return x; };
+    return AD.mix(L(1.2), [cut(WBA.amv(a, AD.lin(6, 30, 0.45), 0.5), 0), 0.45], [cut(WBA.amv(b, AD.lin(8, 40, 0.3), 0.5), 0.15), 0.28, 0.15], [AS.thump(130, 50, 0.06, 0.35, 1), 0.7, 0.5], [WBA.crystal(0.3, 2600, 181), 0.12, 0.5],
+      [AD.env(AD.biq(AD.noise(0.3, 182), 'bp', AD.sweep(400, 2600, 0.06), 0.8), 0.003, 0.08, 0, 0.1), 0.5, 0.65]); }, {warm:true});
+  D('w_rupture_hit', () => AD.mix(L(1.1), [AS.click(0.02, 3000, 191), 0.4], [AS.thump(110, 40, 0.08, 0.6, 1), 0.9], [AD.expd(AD.lp(AD.noise(0.6, 192), 900, 0.7), 0.15), 0.4], [WBA.crystal(0.7, 1500, 193), 0.08, 0.05]), {warm:true});
+  D('w_fang', () => AD.mix(L(0.3), [WBA.slice(0.1, 201, 6000), 0.9], [AS.click(0.015, 3200, 202), 0.3, 0.06]), {warm:true});
+  D('w_fang2', () => AD.mix(L(0.3), [WBA.slice(0.09, 203, 7000), 0.9], [AS.click(0.015, 3800, 204), 0.3, 0.05]), {warm:true});
+  D('w_fang3', () => AD.mix(L(0.3), [WBA.slice(0.11, 205, 5200), 0.9], [AS.click(0.015, 2800, 206), 0.3, 0.07]), {warm:true});
+  D('w_fang_heavy', () => AD.mix(L(1.4), [WBA.rise(0.4, 211, 70, 200), 0.45], [AS.sines(0.35, [1800, 2700], 0.3, 0.01), 0.1, 0.05], [WBA.slice(0.25, 212, 5400), 1, 0.42], [AS.thump(100, 36, 0.1, 0.6, 1), 0.9, 0.44], [AD.comb(WBA.slice(0.25, 213, 3000), 70, 0.5), 0.25, 0.5]));
+  D('sp_expanse', () => AD.mix(L(2.6), [WBA.suck(0.6, 221, 5000, 700), 0.3], [AS.thump(70, 28, 0.4, 1.6, 1), 1, 0.55], [WBA.crystal(1.6, 1100, 222), 0.15, 0.6], [AD.tail(AD.atk(WBA.amv(AD.osc(1.8, 62, 'sine'), 0.8, 0.5), 0.4), 0.8), 0.3, 0.7]));
+  D('sp_dominion', () => AD.mix(L(2.6), [AD.atk(AD.lp(AD.noise(1.2, 231), 240, 0.9), 0.5), 0.8], [AS.thump(58, 26, 0.5, 1.6, 1), 1, 0.6], [WBA.amv(WBA.hum(1.8, 98, 92, 4, 'saw', 0.3), 5, 0.4), 0.14, 0.4]));
+}
+// play a world-boss sound: boss warnings and domains are top priority; everything goes through the shared mixer
+function wbSfx(name, o){ try { if (typeof auSfx === 'function') return auSfx(name, Object.assign({pri:4, max:2, rev:0.45}, o || {})); } catch(e){} return null; }
+
+// =====================================================================
+// WORLD BOSSES · exclusive rewards: two weapons and two Signature Powers, only from their world boss.
+// They use the existing weapon, Locker and Signature Power systems; none of them appear in shops, cases,
+// chests, quests or ordinary drops (excl + boss-tagged weapons are filtered out of every pool already).
+// =====================================================================
+const WB_WEAPONS = ['celestialrupture', 'tyrantsfang'];
+for (const id of WB_WEAPONS){ if (!WIDS.includes(id)) WIDS.push(id); WPN[id].__id = id; }   // (already in WIDS: they are defined before it)
+Object.assign(GL, {
+  w_celestialrupture:() => G.c(32,32,26,'#1C1550') + G.c(20,24,9,'#3FE0D0',2.5) + G.c(20,24,3.5,'#04101E',0) + G.c(44,24,9,'#FFB03D',2.5) + G.c(44,24,3.5,'#FFF1C8',0) + G.c(32,42,11,'#B98CFF',3) + G.c(32,42,5,'#FFFFFF',0) + G.l('M24 30 Q32 36 32 32 M40 30 Q32 36 32 32','#E6DCFF',2),
+  w_tyrantsfang:() => G.c(32,32,26,'#1A0508') + G.l('M12 50 Q30 34 52 12','#FFFFFF',2) + G.l('M12 50 Q30 34 52 12','#FF3B55',1.2) + G.l('M14 40 Q28 28 44 12','#FF9BA6',1) + G.p('M42 44 L52 40 L46 50 Z','#E0283C',2) + G.c(18,46,5,'#5A1A1E',2),
+});
+// ---------- Celestial Rupture: the two-orb cast ----------
+// Each shot: a teal pull orb forms at one hand (0.00), a gold push orb at the other (0.12), they orbit and close in
+// (0.24-0.36), collide with a flash and a moment of near-silence (0.36), merge into the white-violet core (0.40) and
+// launch (0.50). The sound (w_celestialrupture) follows the same timeline. You keep moving the whole time. If your fire
+// rate is faster than the cast, the cast speeds up to fit and the sound is pitched up to match.
+const WB_CASTS = [], WB_FX = [];
+const ruptLv = s => Math.max(1, Math.min(5, s.lv || 1));
+function wbRuptureCast(s, dmgMul, src){
+  const T = Math.min(0.5, Math.max(0.18, wCd(s)*0.8));
+  WB_CASTS.push({k:'rup', t:0, T, s, dmgMul, src, lv:ruptLv(s), fired:false});
+  if (WB_CASTS.length > 6) WB_CASTS.shift();
+}
+function wbRuptureFire(c){
+  const tgt = nearest(P.x, P.y, WPN.celestialrupture.range*st.rangeMul*S); const a = tgt ? Math.atan2(tgt.y - P.y, tgt.x - P.x) : (P.aim || 0);
+  const lv = c.lv, w = WPN.celestialrupture, n = 1 + (st.extraShots || 0), dist = tgt ? Math.max(120*S, Math.hypot(tgt.x - P.x, tgt.y - P.y) + 30*S) : w.range*S;
+  for (let i=0;i<n;i++){ const aa = a + (i - (n - 1)/2)*0.14, sp = w.spd*st.bspdMul*S;
+    fireBullet(P.x + Math.cos(aa)*20*S, P.y - 14*S + Math.sin(aa)*20*S, aa, w, {kind:'bullet', vis:'rupture', dmg:wDmg(c.s)*c.dmgMul*(1 + 0.12*(lv - 1)), pierce:99, aoe:0, spd:w.spd, life:dist/sp, src:c.src, wid:'celestialrupture'});
+    const b = bullets[bullets.length - 1]; if (b) b.rup = {lv, big:lv >= 2 ? 1.25 + (lv >= 5 ? 0.25 : 0) : 1, aoe:w.aoe*S*(lv >= 2 ? 1.15 : 1)*(lv >= 5 ? 1.55 : 1)*(st.aoeMul || 1), dragT:0, trail:[]}; }
+  P.recoil = 1;
+}
+// ---------- Tyrant's Fang: cutting gestures ----------
+function wbFangFire(s, dmgMul, src){
+  const lv = Math.max(1, Math.min(5, s.lv || 1)), w = WPN.tyrantsfang, range = w.range*st.rangeMul*S, base = wDmg(s)*dmgMul;
+  // targets: the nearest (levels 1-3), up to three different enemies (level 4+)
+  const cands = enemies.filter(e => !e.dead && !e.untargetable && (e.x - P.x)**2 + (e.y - P.y)**2 < range*range).sort((a, b) => ((a.x - P.x)**2 + (a.y - P.y)**2) - ((b.x - P.x)**2 + (b.y - P.y)**2));
+  if (!cands.length) return null;
+  const tg = lv >= 4 ? cands.slice(0, 3) : [cands[0]], seq = lv >= 5 ? 3 : lv >= 2 ? 2 : 1, wide = lv >= 3;
+  let a0 = Math.atan2(tg[0].y - P.y, tg[0].x - P.x);
+  for (let k=0;k<seq;k++) WB_CASTS.push({k:'fang', t:-k*0.07, T:0.001, fire:() => { for (const t of tg){ if (t.dead) continue; const a = Math.atan2(t.y - P.y, t.x - P.x) + (k ? (k % 2 ? 0.08 : -0.08) : 0);
+      fireBullet(P.x, P.y - 10*S, a, w, {kind:'bullet', vis:'fang', dmg:base*(k ? 0.7 : 1), pierce:w.pierce + st.extraPierce, spd:w.spd, src, wid:'tyrantsfang'}); const b = bullets[bullets.length - 1]; if (b){ b.fang = {wide, side:k % 2 ? -1 : 1}; } }
+      WB_FX.push({k:'gesture', t:0, a:a0, side:k % 2 ? -1 : 1});
+      try { if (typeof auSfx === 'function') auSfx(pick(['w_fang', 'w_fang2', 'w_fang3']), {vol:0.55, key:'w_fang', cd:35, max:3, group:'gun', dk:0.25, pri:3, vary:0.08, pan:(Math.random() - 0.5)*0.3, budget:'gun'}); } catch(e){} }});
+  // the execution cut: every 5th volley (sooner at higher levels), a line across the target area, then heavy damage
+  s.fangN = (s.fangN || 0) + 1;
+  if (s.fangN % (lv >= 5 ? 3 : lv >= 3 ? 4 : 5) === 0){ const t = tg[0], a = a0 + Math.PI/2*(Math.random() < 0.5 ? 1 : -1)*0.0 + rnd(-0.6, 0.6), L = 230*S*(lv >= 5 ? 1.35 : 1);
+    WB_FX.push({k:'exec', t:0, x:t.x, y:t.y, a, L, warn:0.42, dmg:base*4.2, src, lv});
+    try { if (typeof auSfx === 'function') auSfx('w_fang_heavy', {vol:0.75, key:'w_fang_heavy', cd:250, max:1, pri:3}); } catch(e){} }
+  return a0;
+}
+{ const _sp = shootPattern; shootPattern = function(fx, fy, tgt, s, dmgMul, src){
+    if (s && src === 'player' && s.id === 'celestialrupture'){ wbRuptureCast(s, dmgMul, src); return Math.atan2(tgt.y - fy, tgt.x - fx); }
+    if (s && src === 'player' && s.id === 'tyrantsfang'){ const a = wbFangFire(s, dmgMul, src); if (a != null) return a; }
+    return _sp.apply(this, arguments); }; }
+// casts, the rupture's path effects and the execution cuts
+{ const _up = update; update = function(dt){
+    try { if (run && state === 'play'){
+      for (const c of WB_CASTS){ c.t += dt; if (c.k === 'rup' && !c.fired && c.t >= c.T){ c.fired = true; wbRuptureFire(c); } if (c.k === 'fang' && !c.fired && c.t >= 0){ c.fired = true; c.fire(); } }
+      for (let i = WB_CASTS.length - 1; i >= 0; i--) if (WB_CASTS[i].fired && (WB_CASTS[i].k === 'fang' || WB_CASTS[i].t > WB_CASTS[i].T + 0.15)) WB_CASTS.splice(i, 1);
+      for (const b of bullets){ if (!b.rup || b.dead) continue; const R = b.rup;
+        R.trail.push([b.x, b.y]); if (R.trail.length > (R.lv >= 3 ? 14 : 7)) R.trail.shift();
+        // level 4+: gravity drag along the path
+        if (R.lv >= 4){ R.dragT -= dt; const DR = 70*S*R.big; for (const e of enemies){ if (e.dead || e.attacks || e.mir || e.untargetable) continue; const dx = b.x - e.x, dy = b.y - e.y, d = Math.hypot(dx, dy); if (d < DR && d > 4*S){ const f = Math.min(d, 220*S*dt); e.x += dx/d*f; e.y += dy/d*f; if (R.dragT <= 0) dealDamage(e, b.dmg*0.12, {noCrit:true, quiet:true, src:b.src, wid:b.wid}); } } if (R.dragT <= 0) R.dragT = 0.2; }
+        // the impact: the core bursts where it was aimed (or when it runs out)
+        if (b.life <= dt*1.05 && !R.boom){ R.boom = true; explodeAt(b.x, b.y, R.aoe, b.dmg*1.1, '#B98CFF', {wid:'celestialrupture'}); WB_FX.push({k:'rupboom', t:0, x:b.x, y:b.y, r:R.aoe, lv:R.lv});
+          try { if (typeof auSfx === 'function') auSfx('w_rupture_hit', {x:b.x, y:b.y, vol:0.7, key:'w_rupture_hit', cd:90, max:2, pri:3, budget:'boom'}); } catch(e){} }
+      }
+      for (const f of WB_FX){ f.t += dt;
+        if (f.k === 'exec' && !f.done && f.t >= f.warn){ f.done = true; const dx = Math.cos(f.a), dy = Math.sin(f.a), x1 = f.x - dx*f.L, y1 = f.y - dy*f.L, x2 = f.x + dx*f.L, y2 = f.y + dy*f.L;
+          let n = 0; for (const e of enemies){ if (e.dead || e.untargetable) continue; if (segDist(e.x, e.y, x1, y1, x2, y2) < e.r + 22*S){ dealDamage(e, f.dmg, {proc:n++ < 3, src:f.src, wid:'tyrantsfang', kind:'crit'}); } }
+          shake = Math.max(shake, reduce ? 0 : 5); }
+      }
+      for (let i = WB_FX.length - 1; i >= 0; i--){ const f = WB_FX[i]; if (f.t > (f.k === 'exec' ? f.warn + 0.35 : f.k === 'rupboom' ? 0.6 : 0.25)) WB_FX.splice(i, 1); }
+      // the fang's wider arcs (level 3+) hit a broader band
+      for (const b of bullets){ if (!b.fang || !b.fang.wide || b.dead) continue; for (const e of enemies){ if (e.dead || e.untargetable || b.hit.has(e)) continue; if ((e.x - b.x)**2 + (e.y - b.y)**2 < (e.r + 20*S)**2){ b.hit.add(e); dealDamage(e, b.dmg, {proc:true, src:b.src, wid:b.wid}); WB_FX.push({k:'cut', t:0, x:e.x, y:e.y, a:Math.atan2(b.vy, b.vx)}); } } }
+    } } catch(err){ console.error(err); }
+    return _up.apply(this, arguments); }; }
+// a cut line on every Tyrant's Fang hit
+{ const _dd = dealDamage; dealDamage = function(e, dmg, o){ const r = _dd.apply(this, arguments); if (o && o.wid === 'tyrantsfang' && e && WB_FX.length < 60 && o.src !== 'dot') WB_FX.push({k:'cut', t:0, x:e.x, y:e.y, a:Math.random()*TAU}); return r; }; }
+if (typeof AU !== 'undefined' && AU.def && AU.defs['w_rupture']){ AU.def('w_celestialrupture', AU.defs['w_rupture'].fn, {warm:true}); AU.def('w_tyrantsfang', () => new Float32Array(64)); }
+// pitch the cast sound up when the cast is shortened by a fast fire rate (so it stays in sync)
+{ const _ws = wsfx; wsfx = function(name, wd){ if (wd && wd.__id === 'celestialrupture'){ const s = run && run.weapons.find(x => x.id === 'celestialrupture'), T = s ? Math.min(0.5, Math.max(0.18, wCd(s)*0.8)) : 0.5; try { auSfx('w_celestialrupture', {vol:0.6, rate:0.5/T, key:'w_rupture', cd:80, max:2, group:'gun', pri:3, vary:0.02}); } catch(e){} return; } if (wd && wd.__id === 'tyrantsfang') return; return _ws.apply(this, arguments); }; }
+// projectile looks: the core, its trail, the near-invisible fang cut
+{ const _v2 = drawVis2; drawVis2 = function(b, now){
+    if (b.vis === 'rupture'){ const c = ctx, R = b.rup || {lv:1, big:1, trail:[]}, r = 9*S*R.big;
+      c.save(); c.lineCap = 'round'; if (R.trail.length > 1){ for (let i=1;i<R.trail.length;i++){ const k = i/R.trail.length; c.globalAlpha = 0.45*k; c.strokeStyle = i % 2 ? '#7B5CFF' : '#B98CFF'; c.lineWidth = r*1.6*k; c.beginPath(); c.moveTo(R.trail[i - 1][0], R.trail[i - 1][1]); c.lineTo(R.trail[i][0], R.trail[i][1]); c.stroke(); } }
+      c.restore(); wbOrb(ctx, b.x, b.y, r, 'conv', now);
+      if (R.lv >= 4){ c.save(); c.globalAlpha = 0.3; c.strokeStyle = '#3FE0D0'; c.lineWidth = 1.5*S; c.setLineDash([4*S, 5*S]); circle(c, b.x, b.y, 70*S*R.big); c.stroke(); c.restore(); }
+      return true; }
+    if (b.vis === 'fang'){ const c = ctx, a = Math.atan2(b.vy, b.vx), wide = b.fang && b.fang.wide, h = (wide ? 26 : 15)*S, side = b.fang ? b.fang.side : 1;
+      c.save(); c.translate(b.x, b.y); c.rotate(a); c.lineCap = 'round';
+      c.globalAlpha = 0.22; c.strokeStyle = '#FFFFFF'; c.lineWidth = 4*S; c.beginPath(); c.moveTo(0, -h*side); c.quadraticCurveTo(8*S, 0, 0, h*side); c.stroke();
+      c.globalAlpha = 0.95; c.strokeStyle = '#FF3B55'; c.lineWidth = 1.4*S; c.stroke();
+      c.globalAlpha = 0.3; c.strokeStyle = '#FF9BA6'; c.lineWidth = 1*S; c.beginPath(); c.moveTo(-6*S, 0); c.lineTo(-38*S, 0); c.stroke(); c.restore();
+      return true; }
+    return _v2.apply(this, arguments); }; }
+// cast orbs at the player's hands, execution lines, impact cuts and bursts (drawn above the world)
+{ const _dr = draw; draw = function(now){ const r = _dr.apply(this, arguments); try { if (run && ['play', 'paused', 'levelup', 'chest'].includes(state)) wbDrawItemFx(now); } catch(err){ console.error(err); } return r; }; }
+function wbDrawItemFx(now){
+  const c = ctx;
+  for (const k of WB_CASTS){ if (k.k !== 'rup' || k.fired) continue; const T = k.T, u = k.t/T, hx = P.x, hy = P.y - 22*S, sep = 22*S*(1 - Math.max(0, (u - 0.48)/0.24)**2), sp = now*10 + u*14;
+    if (u < 0.72){ const pa = u < 0.48 ? {x:hx + 20*S, y:hy} : {x:hx + Math.cos(sp)*sep, y:hy + Math.sin(sp)*sep*0.6}, pb = u < 0.48 ? {x:hx - 20*S, y:hy} : {x:hx - Math.cos(sp)*sep, y:hy - Math.sin(sp)*sep*0.6};
+      if (u > 0.48){ c.save(); c.globalAlpha = 0.45; c.lineWidth = 2.5*S; c.strokeStyle = '#3FE0D0'; c.beginPath(); for (let i=0;i<8;i++){ const s2 = sp - i*0.18; i ? c.lineTo(hx + Math.cos(s2)*sep, hy + Math.sin(s2)*sep*0.6) : c.moveTo(hx + Math.cos(s2)*sep, hy + Math.sin(s2)*sep*0.6); } c.stroke();
+        c.strokeStyle = '#FFB03D'; c.beginPath(); for (let i=0;i<8;i++){ const s2 = sp - i*0.18; i ? c.lineTo(hx - Math.cos(s2)*sep, hy - Math.sin(s2)*sep*0.6) : c.moveTo(hx - Math.cos(s2)*sep, hy - Math.sin(s2)*sep*0.6); } c.stroke(); c.restore(); }
+      wbOrb(c, pa.x, pa.y, 6.5*S*Math.min(1, u/0.24)*(k.lv >= 5 ? 1.25 : 1), 'pull', now);
+      if (u > 0.24) wbOrb(c, pb.x, pb.y, 6.5*S*Math.min(1, (u - 0.24)/0.24)*(k.lv >= 5 ? 1.25 : 1), 'push', now); }
+    else { if (u < 0.8){ c.save(); c.globalAlpha = 1 - (u - 0.72)/0.08; c.fillStyle = '#FFFFFF'; circle(c, hx, hy, 18*S); c.fill(); c.restore(); } wbOrb(c, hx, hy, (5 + 6*Math.min(1, (u - 0.72)/0.28))*S*(k.lv >= 5 ? 1.3 : 1), 'conv', now); } }
+  for (const f of WB_FX){
+    if (f.k === 'exec'){ const dx = Math.cos(f.a), dy = Math.sin(f.a), x1 = f.x - dx*f.L, y1 = f.y - dy*f.L, x2 = f.x + dx*f.L, y2 = f.y + dy*f.L; c.save(); c.lineCap = 'round';
+      if (f.t < f.warn){ const k = f.t/f.warn; c.globalAlpha = 0.35 + 0.5*k; c.strokeStyle = '#FF3B55'; c.lineWidth = 1.5*S; c.setLineDash([6*S, 6*S]); c.beginPath(); c.moveTo(x1, y1); c.lineTo(x2, y2); c.stroke(); c.setLineDash([]);
+        c.globalAlpha = 0.2*k; c.lineWidth = 30*S; c.stroke(); }
+      else { const k = 1 - (f.t - f.warn)/0.35; c.globalAlpha = k; c.strokeStyle = '#FFFFFF'; c.lineWidth = 10*S*k; c.beginPath(); c.moveTo(x1, y1); c.lineTo(x2, y2); c.stroke(); c.strokeStyle = '#FF3B55'; c.lineWidth = 3*S; c.stroke(); }
+      c.restore(); }
+    else if (f.k === 'cut'){ const k = 1 - f.t/0.25; c.save(); c.globalAlpha = k; c.strokeStyle = '#FFFFFF'; c.lineWidth = 2*S; c.lineCap = 'round'; const L = 16*S; c.beginPath(); c.moveTo(f.x - Math.cos(f.a)*L, f.y - Math.sin(f.a)*L); c.lineTo(f.x + Math.cos(f.a)*L, f.y + Math.sin(f.a)*L); c.stroke(); c.strokeStyle = '#FF3B55'; c.lineWidth = 1*S; c.stroke(); c.restore(); }
+    else if (f.k === 'rupboom'){ const k = f.t/0.6; c.save(); c.globalAlpha = 1 - k; c.fillStyle = '#F2EEFF'; circle(c, f.x, f.y, f.r*0.4*(1 - k)); c.fill(); c.strokeStyle = '#B98CFF'; c.lineWidth = 8*S*(1 - k); circle(c, f.x, f.y, f.r*(0.3 + 0.9*k)); c.stroke(); c.strokeStyle = '#3FE0D0'; c.lineWidth = 3*S*(1 - k); circle(c, f.x, f.y, f.r*(0.2 + 1.1*k)); c.stroke(); c.restore(); }
+    else if (f.k === 'gesture'){ const k = 1 - f.t/0.25; c.save(); c.globalAlpha = k*0.8; c.strokeStyle = '#FF3B55'; c.lineWidth = 2.5*S; c.beginPath(); c.arc(P.x, P.y - 16*S, 26*S, f.a - 0.9*f.side, f.a + 0.9*f.side, f.side < 0); c.stroke(); c.restore(); }
+  }
+}
+// reset between runs
+{ const _ss = startStage; startStage = function(){ WB_CASTS.length = 0; WB_FX.length = 0; return _ss.apply(this, arguments); }; }
+
+// ---------- Signature Powers ----------
+// (the bosses and the two Signature Powers are declared ahead of the save loader; see edits.py)
+
+Object.assign(GL, {
+  sp_expanse:() => G.c(32,32,27,'#05030F') + `<ellipse cx="32" cy="34" rx="22" ry="9" fill="none" stroke="#B9A8FF" stroke-width="2.5"/><ellipse cx="32" cy="34" rx="14" ry="22" fill="none" stroke="#3FE0D0" stroke-width="2" transform="rotate(35 32 34)"/>` + G.c(32,32,7,'#E6DCFF',2) + G.p(G.star(16,16,4,1.6),'#FFE07A',1) + G.p(G.star(50,20,3,1.2),'#FFFFFF',1) + G.p(G.star(46,50,3,1.2),'#FFFFFF',1),
+  sp_dominion:() => G.c(32,32,27,'#2A0204') + G.p('M14 46 V30 H20 V24 H26 V30 H38 V24 H44 V30 H50 V46 Z','#120304',2.5) + G.p('M28 46 V38 Q32 33 36 38 V46 Z','#FF5A1F',0) + G.l('M8 54 L56 54','#FF3B55',2) + G.l('M12 16 L26 10 M38 10 L52 16','#FFD6DC',2.5),
+});
+// drop chance in the Locker: a flat 0.5%, no pity (these are meant to be the rarest rewards in the game)
+{ const _sc = sigChance; sigChance = function(id){ return SIGM[id] && SIGM[id].wb ? 0.005 : _sc.apply(this, arguments); }; }
+// the Powers tab: a DOMAINS filter (the domains stay in the same collection and use the same Power slot)
+let WB_PFILT = 'all';
+{ const _rp = renderPowersTab; renderPowersTab = function(body){ const r = _rp.apply(this, arguments);
+    try { const grid = body.querySelector('.sgrid'); if (grid){ const bar = el('div', 'tabs wbpf'); for (const [k, t] of [['all', 'All Powers'], ['domain', 'Domains']]){ const b = el('button', 'tab' + (WB_PFILT === k ? ' on' : ''), t); b.addEventListener('click', () => { WB_PFILT = k; renderLocker(); }); bar.appendChild(b); } grid.before(bar); }
+      body.querySelectorAll('.scard').forEach(card => { const b = card.querySelector('.stx > b'); const s = SIGS.find(x => b && (b.textContent === x.name)); const dom = !!(s && s.domain);
+        if (WB_PFILT === 'domain' && !dom){ card.remove(); return; }
+        if (!dom) return;
+        const tag = el('span', 'tag wbdtag', 'DOMAIN'); const t0 = card.querySelector('.stx .tag'); if (t0) t0.after(tag);
+        card.querySelectorAll('small.src').forEach((sm, k) => { if (k === 0) sm.textContent = `Boss source: ${BOSSES[s.boss].name} (World Boss Event) · Cooldown ${s.cd}s · lasts ${s.dur}s`; else sm.textContent = 'Drop chance 0.5% per world boss victory (one victory per event)'; });
+        const pb = card.querySelector('.pb'); if (pb) pb.remove();
+        // a small looping preview of the domain
+        const ic = card.querySelector('.sic'); if (ic){ const cv = document.createElement('canvas'); cv.width = cv.height = 72; cv.className = 'wbprev'; ic.appendChild(cv); wbPreview(cv, s.id); } });
+      if (WB_PFILT === 'domain'){ const n = el('p', 'note', 'Domains are the rarest Signature Powers: each opens a dimension around you. They come only from world bosses, at 0.5% per victory, and use your normal Power slot and button.'); const g = body.querySelector('.sgrid'); if (g) g.before(n); }
+    } catch(e){ console.error(e); }
+    return r; }; }
+function wbPreview(cv, id){ const g = cv.getContext('2d'); const tick = () => { if (!cv.isConnected) return; const t = performance.now()/1000; g.clearRect(0, 0, 72, 72); g.save(); g.beginPath(); g.arc(36, 36, 34, 0, TAU); g.clip();
+    if (id === 's_heavenfall'){ g.fillStyle = '#05030F'; g.fillRect(0, 0, 72, 72); for (let i=0;i<20;i++){ g.fillStyle = i % 5 ? '#E6E0FF' : '#FFE07A'; g.globalAlpha = 0.4 + 0.6*Math.abs(Math.sin(t*2 + i)); g.fillRect((i*37) % 72, (i*53 + t*4) % 72, 2, 2); } g.globalAlpha = 1; g.strokeStyle = '#B9A8FF'; g.lineWidth = 2; g.translate(36, 36); g.rotate(t*0.6); g.beginPath(); g.ellipse(0, 0, 26, 10, 0, 0, TAU); g.stroke(); g.strokeStyle = '#3FE0D0'; g.beginPath(); g.ellipse(0, 0, 10, 26, 0.6, 0, TAU); g.stroke(); }
+    else { g.fillStyle = '#2A0204'; g.fillRect(0, 0, 72, 72); g.strokeStyle = 'rgba(255,59,85,.7)'; g.lineWidth = 1.5; for (let k=0;k<8;k++){ const a = k/8*TAU; g.beginPath(); g.moveTo(36, 46); g.lineTo(36 + Math.cos(a)*40, 46 + Math.sin(a)*20); g.stroke(); } g.fillStyle = '#120304'; g.fillRect(16, 14, 40, 22); g.fillStyle = '#FF5A1F'; g.fillRect(32, 24, 8, 12); const q = (t*1.4) % 1; g.strokeStyle = '#FFFFFF'; g.lineWidth = 2; g.globalAlpha = 1 - q; g.beginPath(); g.moveTo(6, 60 - q*40); g.lineTo(66, 40 - q*40); g.stroke(); }
+    g.restore(); requestAnimationFrame(tick); }; tick(); }
+{ const st0 = document.createElement('style'); st0.textContent = `.wbpf{margin:6px 0 10px}.wbdtag{background:linear-gradient(90deg,#3B2385,#8A0E1E)!important;color:#fff!important;margin-left:4px}.sic{position:relative}.wbprev{position:absolute;inset:0;width:100%;height:100%;border-radius:50%;opacity:.9;pointer-events:none}`; document.head.appendChild(st0); }
+// activation: a short gesture (the power button), then the domain opens around you
+{ const _sa = sigActivate; sigActivate = function(id){
+    if (id === 's_heavenfall' || id === 's_siege'){ run.wbSig = {id, x:P.x, y:P.y, t:0, R:(id === 's_heavenfall' ? 250 : 235)*S, seed:Math.random()*100};
+      const c = id === 's_heavenfall' ? '#B9A8FF' : '#FF3B55'; ring(P.x, P.y, run.wbSig.R, c, 0.8); burst(P.x, P.y, c, 30, 1.3);
+      try { AU.duck(0.45, 0.5); } catch(e){} wbSfx(id === 's_heavenfall' ? 'sp_expanse' : 'sp_dominion', {vol:0.9, pri:4, max:1});
+      if (typeof DUO !== 'undefined' && DUO.on) DUO.sigFx = {id, t0:performance.now()};
+      return; }
+    return _sa.apply(this, arguments); }; }
+{ const _st = sigTick; sigTick = function(dt){ const r = _st.apply(this, arguments);
+    const f = run && run.wbSig; if (!f) return r;
+    f.t += dt; f.x += (P.x - f.x)*Math.min(1, dt*3); f.y += (P.y - f.y)*Math.min(1, dt*3);
+    f.tick = (f.tick || 0) - dt;
+    const inside = () => enemies.filter(e => !e.dead && !e.untargetable && (e.x - f.x)**2 + (e.y - f.y)**2 < f.R*f.R);
+    if (f.id === 's_heavenfall'){
+      for (const e of inside()) e.slowT = Math.max(e.slowT, 0.4);
+      if (f.tick <= 0 && f.t < 6){ f.tick = 0.5; const c = inside(); for (let i=0;i<Math.min(5, c.length);i++){ const t = pick(c); fstrikes.push({x:t.x + rnd(-14,14)*S, y:t.y + rnd(-14,14)*S, r:62*S, warn:0.4, max:0.4, dmg:abilityDmg(2.4), kind:'star'}); } wbSfx('wb_star', {vol:0.25, pri:2, max:1, cd:300, rate:1.3}); }
+      if (f.t >= 6 && !f.done){ f.done = true; explodeAt(f.x, f.y, f.R, abilityDmg(9), '#9B7BFF'); ring(f.x, f.y, f.R*1.15, '#E6E0FF', 0.7); burst(f.x, f.y, '#3FE0D0', 40, 1.6); wbSfx('wb_domain_end', {vol:0.7, pri:4, max:1}); } }
+    if (f.id === 's_siege'){
+      // waves of spectral cuts across the domain
+      if (f.tick <= 0 && f.t < 6){ f.tick = 0.5; const c = inside(); const a = Math.random()*Math.PI; (run.wbCuts || (run.wbCuts = [])).push({x:f.x, y:f.y, a, R:f.R, t:0});
+        for (const e of c){ const dx = e.x - f.x, dy = e.y - f.y; if (Math.abs(-dx*Math.sin(a) + dy*Math.cos(a)) < f.R*0.55) dealDamage(e, abilityDmg(3.4), {noCrit:true, quiet:true, src:'sig'}); else dealDamage(e, abilityDmg(1.8), {noCrit:true, quiet:true, src:'sig'}); }
+        wbSfx('wb_blades', {vol:0.35, pri:2, max:1, cd:250, rate:1.2}); }
+      if (f.t >= 6 && !f.done){ f.done = true; explodeAt(f.x, f.y, f.R, abilityDmg(8.5), '#E0283C'); (run.wbCuts || (run.wbCuts = [])).push({x:f.x, y:f.y, a:-0.4, R:f.R*1.3, t:0, big:1}); burst(f.x, f.y, '#FF3B55', 40, 1.6); wbSfx('wb_final_slash', {vol:0.7, pri:4, max:1}); } }
+    if (f.t > 6.4) run.wbSig = null;
+    return r; }; }
+{ const _up = update; update = function(dt){ const r = _up.apply(this, arguments); if (run && run.wbCuts){ for (const q of run.wbCuts) q.t += dt; run.wbCuts = run.wbCuts.filter(q => q.t < 0.35); } return r; }; }
+// the domain, drawn on the ground under everything else (also used for a Duos partner's domain)
+function wbDrawDomain(c, id, x, y, R0, t, now){
+  const k = Math.min(1, t/0.35), fade = t > 5.6 ? Math.max(0, (6.4 - t)/0.8) : 1, R = R0*(0.7 + 0.3*k);
+  c.save(); c.globalAlpha = fade;
+  if (id === 's_heavenfall'){ c.save(); c.beginPath(); c.arc(x, y, R, 0, TAU); c.clip(); c.globalAlpha = 0.8*fade; c.fillStyle = '#05030F'; c.fillRect(x - R, y - R, R*2, R*2);
+      for (let i=0;i<40;i++){ const sx = x - R + ((i*97.3) % (R*2)), sy = y - R + ((i*61.7 + now*8) % (R*2)); c.globalAlpha = fade*(0.3 + 0.7*Math.abs(Math.sin(now*2 + i))); c.fillStyle = i % 7 ? '#E6E0FF' : '#FFE07A'; c.fillRect(sx, sy, 2*S, 2*S); }
+      const n = c.createRadialGradient(x, y, 0, x, y, R); n.addColorStop(0, 'rgba(155,123,255,.25)'); n.addColorStop(1, 'rgba(63,224,208,.12)'); c.globalAlpha = fade; c.fillStyle = n; c.fillRect(x - R, y - R, R*2, R*2);
+      c.translate(x, y); c.rotate(now*0.4); c.strokeStyle = 'rgba(185,168,255,.7)'; c.lineWidth = 2*S; c.beginPath(); c.ellipse(0, 0, R*0.75, R*0.3, 0, 0, TAU); c.stroke(); c.strokeStyle = 'rgba(63,224,208,.6)'; c.beginPath(); c.ellipse(0, 0, R*0.3, R*0.7, 0.6, 0, TAU); c.stroke();
+      c.fillStyle = '#FFD27A'; for (let i=0;i<6;i++){ const a = i/6*TAU; star(c, Math.cos(a)*R*0.55, Math.sin(a)*R*0.55, 4*S, 4); c.fill(); } c.restore();
+    c.strokeStyle = 'rgba(230,246,255,.85)'; c.lineWidth = 3*S; circle(c, x, y, R); c.stroke(); }
+  else { const g = c.createRadialGradient(x, y, R*0.1, x, y, R); g.addColorStop(0, 'rgba(120,10,20,.45)'); g.addColorStop(1, 'rgba(40,0,6,.15)'); c.fillStyle = g; circle(c, x, y, R); c.fill();
+    c.strokeStyle = 'rgba(255,40,60,.6)'; c.lineWidth = 2*S; for (let i=0;i<12;i++){ const a = i/12*TAU, L = R*Math.min(1, t/0.8); c.beginPath(); c.moveTo(x, y); c.lineTo(x + Math.cos(a)*L, y + Math.sin(a)*L); c.stroke(); }
+    c.strokeStyle = 'rgba(255,90,40,.85)'; c.lineWidth = 2.4*S; circle(c, x, y, R); c.stroke();
+    // a small war-citadel rises behind you
+    const rise = Math.min(1, t/0.8), bx = x, by = y - R*0.55 + (1 - rise)*30*S; c.globalAlpha = rise*fade; c.fillStyle = '#120304'; c.strokeStyle = '#000'; c.lineWidth = 2.5*S;
+    c.beginPath(); c.moveTo(bx - 46*S, by + 30*S); c.lineTo(bx - 46*S, by); c.lineTo(bx - 34*S, by); c.lineTo(bx - 34*S, by - 12*S); c.lineTo(bx - 24*S, by - 12*S); c.lineTo(bx - 24*S, by); c.lineTo(bx - 10*S, by); c.lineTo(bx, by - 22*S); c.lineTo(bx + 10*S, by); c.lineTo(bx + 24*S, by); c.lineTo(bx + 24*S, by - 12*S); c.lineTo(bx + 34*S, by - 12*S); c.lineTo(bx + 34*S, by); c.lineTo(bx + 46*S, by); c.lineTo(bx + 46*S, by + 30*S); c.closePath(); c.fill(); c.stroke();
+    c.fillStyle = '#FF5A1F'; c.fillRect(bx - 6*S, by + 12*S, 12*S, 18*S);
+    for (let i=0;i<6;i++){ const a = i/6*TAU + now*1.2; wbBlade(c, x + Math.cos(a)*R*0.8, y + Math.sin(a)*R*0.8, a + Math.PI/2, 0.8); } }
+  c.restore();
+}
+function wbDrawSigFx(now){
+  const f = run && run.wbSig; if (f) wbDrawDomain(ctx, f.id, f.x, f.y, f.R, f.t, now);
+  if (run && run.wbCuts) for (const q of run.wbCuts){ const k = 1 - q.t/0.35, c = ctx; c.save(); c.globalAlpha = k; c.strokeStyle = '#FFFFFF'; c.lineWidth = (q.big ? 10 : 5)*S*k; c.lineCap = 'round'; c.beginPath(); c.moveTo(q.x - Math.cos(q.a)*q.R, q.y - Math.sin(q.a)*q.R); c.lineTo(q.x + Math.cos(q.a)*q.R, q.y + Math.sin(q.a)*q.R); c.stroke(); c.strokeStyle = '#FF3B55'; c.lineWidth = 2*S; c.stroke(); c.restore(); }
+}
+// Duos: tell the partner when your domain opens, and draw theirs where they stand
+if (typeof duoMe === 'function'){
+  const _me = duoMe; duoMe = function(){ const o = _me.apply(this, arguments); try { if (run && run.wbSig) o.dx = run.wbSig.id === 's_heavenfall' ? 1 : 2, o.dt = Math.round(run.wbSig.t*10)/10; } catch(e){} return o; };
+  const _dd2 = drawDecals; drawDecals = function(){ const r = _dd2.apply(this, arguments);
+    try { if (typeof DUO !== 'undefined' && DUO.on && DUO.pl && DUO.pl.dx && run){ const ps = duoPartnerSample(); if (ps){ const id = DUO.pl.dx === 1 ? 's_heavenfall' : 's_siege', x = ps.x/10000*W, y = ps.y/10000*H;
+          const t = (DUO.pl.dt || 0) + (performance.now() - DUO.plAt)/1000; if (t < 6.4) wbDrawDomain(ctx, id, x, y, (id === 's_heavenfall' ? 250 : 235)*S, t, performance.now()/1000); } } } catch(e){}
+    return r; }; }
+
+// =====================================================================
+// WORLD BOSSES · the fight: two original bosses, their arenas, attacks, three phases each and a domain ultimate.
+//   Aetherion, the Void Sovereign   a tall astral knight: a helm whose face is a window into a starfield, a crown of
+//     three small planets, a long indigo coat and nebula cape. Glides. Pull Orb (drags you in, then implodes),
+//     Push Orb (a shockwave that knocks you back), Convergence (both orbs orbit, collide and fire down a corridor),
+//     Event Horizon (a barrier that slows your shots to a stop, held up by Star Anchors), and the domain
+//     INFINITE EXPANSE.
+//   Malrath, the Crimson Tyrant     a broad ember-forged warlord: a horned helm with one visor slit, molten seams,
+//     chain blades. Stomps. Rend (fast, nearly invisible ranged cuts), Cleave (a leaping close cut), Fireball (leaves
+//     burning ground), Blade Tempest (rows of spectral blades with a moving safe gap), War Banners, and the domain
+//     CRIMSON DOMINION (a burning war-citadel rises behind him).
+// The fight runs as an arena run (like Boss Chambers), so all of the player's gear, weapons, relics and powers apply.
+// In Duos the host's game runs the boss; the partner sees the same boss, poses, warnings, phases and domain.
+// =====================================================================
+const WB_BOSS = {
+  aeth:{key:'wb_aeth', name:'Aetherion, the Void Sovereign', short:'Aetherion', col:'#9B7BFF', col2:'#3FE0D0', gold:'#FFD27A', theme:'wb_aeth', arena:'The Cosmic Sanctuary',
+    title:'THE VOID SOVEREIGN', call:'THE VOID SOVEREIGN HAS AWAKENED!', lore:'A knight who swore himself to the night sky and became its keeper. His armour holds a whole starfield; where he walks, gravity bends.',
+    ult:'INFINITE EXPANSE', ultSub:'Keep moving: find the dark tiles', p2:'Convergence: his two orbs become one', p3:'The sky itself answers him',
+    atk:[['aePull','aePush','aeStarfall','aeWard'], ['aeConverge','aePull','aeOrbit','aePush','aeWard','aeStarfall'], ['aeConverge','aeMeridian','aePull','aePush','aeWard','aeConverge']], beh:'shoot', music:5},
+  mal:{key:'wb_mal', name:'Malrath, the Crimson Tyrant', short:'Malrath', col:'#E0283C', col2:'#FF8A3A', gold:'#FFB03D', theme:'wb_mal', arena:'The Crimson Citadel',
+    title:'THE CRIMSON TYRANT', call:'THE CRIMSON TYRANT HAS RETURNED!', lore:'A warlord forged in the furnace of a fallen fortress. He never stopped besieging it; his banners still burn.',
+    ult:'CRIMSON DOMINION', ultSub:'Read the gaps in the blades', p2:'Blade Tempest: the spectral blades wake', p3:'The furnace in his chest roars open',
+    atk:[['maRend','maCleave','maFireball'], ['maTempest','maRend','maCleave','maFireball','maBanner'], ['maTempest','maRend','maStomp','maCleave','maFireball','maTempest']], beh:'chase', music:6},
+};
+const WB_FIGHT_DUR = 420;     // seconds: the boss withdraws through the portal if the fight runs longer than this
+// the bosses use the arena machinery (XB entries) but are not in XB_ORDER, so they never appear in the Boss Codex list
+for (const id in WB_BOSS){ const B = WB_BOSS[id]; XB[B.key] = {name:B.name, col:B.col, acc:'wb_' + id, face:'boss', tier:4, hp:2.6, dmg:1.1, lv:1, theme:B.theme, cost:0, attacks:B.atk[0].slice(), desc:B.lore, wb:true}; }
+const wbB = e => e && e.wb ? WB_BOSS[e.wb] : null;
+const wbBoss = () => run && enemies.find(e => e.wb && !e.dead);
+const DUO_OUT = () => typeof DUO !== 'undefined' && DUO.on && (DUO.down || DUO.dead);
+const wbPose = (e, k, dur) => { e.pose = {k, t:0, dur}; };
+const B_GOLD = '#FFD27A';
+
+// ---------- starting the fight ----------
+// b: 'aeth' | 'mal', ev: event number (one victory per event), w: the world tier the arena runs at
+function wbStartArena(b, ev, w){
+  const B = WB_BOSS[b]; if (!B) return;
+  const pw = save.world;
+  startStage(Math.max(0, Math.min(4, w | 0)), 10);
+  save.world = pw; persist();
+  run.arena = {key:B.key, kind:'wb', dur:0, ev};
+  run.theme = B.theme; bgCache = null;
+  run.bossSpawned = true; run.hordesDone = 9; run.minisDone = 1;
+  run.wbFight = {b, ev, t0:run.t, dur:WB_FIGHT_DUR, phase:1, flash:0, claimed:wbClaimed(ev)};
+  $('#stageLbl').textContent = `World Boss · ${B.short}${save.diff !== 'normal' ? ' · ' + DIFF[save.diff].name : ''}`;
+  banner(B.arena.toUpperCase(), B.name, B.col);
+  if (!duoGuest()) run.delayed.push({t:2.2, fn:() => wbSpawnBoss(b)});
+}
+function wbSpawnBoss(b){
+  const B = WB_BOSS[b], d = XB[B.key], sc = xbScale(d.tier);
+  const e = spawnMob('boss');
+  Object.assign(e, {name:B.name, col:B.col, acc:d.acc, face:'boss', attacks:B.atk[0].slice(), xb:B.key, bkey:B.key, wb:b, beh:B.beh, r:e.r*1.1});
+  e.ds = sc.ds*d.dmg; e.dmg = ROLES.boss.dmg*sc.ds*d.dmg*0.6;   // touching the big figure hurts less; the telegraphed attacks do the work
+  // health: a tier-4 chamber boss x2.6, keeping the Duos bonus spawnMob already applied (two players: more health, not double)
+  e.hp *= sc.hp*d.hp/Math.max(1, ROLES.boss.hp*hpScale()); e.max = e.hp;
+  if (save.diff === 'hard'){ e.hp *= 1.15; e.max = e.hp; } else if (save.diff === 'nightmare'){ e.hp *= 1.35; e.max = e.hp; }
+  e.atkT = 3.4; e.ultT = 0; e.atkHold = 0; wbPose(e, 'idle', 0); e.y = clamp(H*0.42, e.r*2.3, H - e.r*2);
+  run.bossSpawned = true;
+  shake = reduce ? 0 : 16; (typeof auSfx === 'function' ? auSfx('boss_land', {vol:0.8, pri:5}) : beep(70, 0.9, 'sawtooth', 0.07, 40));
+  return e;
+}
+
+// ---------- attacks ----------
+const wbArenaPt = (x, y, pad=40) => ({x:clamp(x, pad*S, W - pad*S), y:clamp(y, (pad + 20)*S, H - pad*S)});
+// how far a ray from (x, y) at angle a runs before leaving the arena
+function wbRayLen(x, y, a){ const dx = Math.cos(a), dy = Math.sin(a); let t = 3000*S; if (dx > 1e-3) t = Math.min(t, (W - x)/dx); if (dx < -1e-3) t = Math.min(t, -x/dx); if (dy > 1e-3) t = Math.min(t, (H - y)/dy); if (dy < -1e-3) t = Math.min(t, -y/dy); return Math.max(60*S, t); }
+// where a hand is, in arena coordinates (set every frame by the figure drawing; falls back to beside the body)
+const wbHand = (e, side) => (e._hands && e._hands[side]) || {x:e.x + side*e.r*0.9, y:e.y - e.r*0.9};
+Object.assign(XB_ATK, {
+  // ----- Aetherion -----
+  aePull(e){ const ds = xds(e), p = wbArenaPt(P.x + rnd(-30,30)*S, P.y + rnd(-30,30)*S, 90);
+    wbPose(e, 'raiseR', 1.5); e.rootT = Math.max(e.rootT || 0, 0.7); wbSfx('wb_pull', {vol:0.75});
+    e.queue.push({t:0.7, fn:() => { const h = wbHand(e, 1); zones.push({kind:'well', x:p.x, y:p.y, x1:h.x, y1:h.y, r:210*S, core:75*S, warn:0.6, wm:0.6, life:2.4, lm:2.4, str:150, dmg:30*ds, col:'#3FE0D0'});
+      e.queue.push({t:0.6 + 2.3, fn:() => wbSfx('wb_implode', {vol:0.9})}); }}); },
+  aePush(e){ const ds = xds(e), R = (e.phase === 3 ? 300 : 260)*S;
+    wbPose(e, 'push', 1.3); e.rootT = Math.max(e.rootT || 0, 1.0); wbSfx('wb_push_charge', {vol:0.7});
+    zones.push({kind:'push', x:e.x, y:e.y, r:R, warn:0.95, wm:0.95, life:0.45, lm:0.45, dmg:24*ds, kb:560, col:'#FFD27A', follow:e});
+    e.queue.push({t:0.95, fn:() => { wbSfx('wb_push_blast', {vol:1}); shake = Math.max(shake, reduce ? 0 : 10); }}); },
+  aeConverge(e){ const ds = xds(e), a = Math.atan2(P.y - e.y, P.x - e.x), len = wbRayLen(e.x, e.y, a);
+    wbPose(e, 'converge', 2.1); e.rootT = Math.max(e.rootT || 0, 2.0); e.atkHold = 2.2; wbSfx('wb_conv', {vol:0.9, pri:5});
+    zones.push({kind:'conv', x:e.x, y:e.y, ang:a, len, w:(e.phase === 3 ? 96 : 84)*S, warn:1.55, wm:1.55, life:0.42, lm:0.42, dmg:34*ds, dmg2:20*ds, br:130*S, col:'#E6DCFF', follow:e});
+    e.queue.push({t:1.55, fn:() => { wbSfx('wb_conv_launch', {vol:0.9}); shake = Math.max(shake, reduce ? 0 : 8); }});
+    e.queue.push({t:1.55 + 0.42, fn:() => { wbSfx('wb_conv_impact', {vol:1}); shake = Math.max(shake, reduce ? 0 : 14); }});
+    if (e.phase === 3) e.queue.push({t:1.1, fn:() => XB_ATK.aeStarfall(e, true)}); },
+  aeStarfall(e, quiet){ const ds = xds(e), n = e.phase === 3 ? 9 : 7;
+    if (!quiet) wbPose(e, 'raiseL', 0.9);
+    for (let i=0;i<n;i++){ const p = nearP(230); zones.push({kind:'burst', x:p.x, y:p.y, r:54*S, warn:0.95 + i*0.08, dmg:21*ds, col:'#B9A8FF', missile:true, wbStar:1}); }
+    zones.push({kind:'burst', x:P.x, y:P.y, r:62*S, warn:1.25, dmg:24*ds, col:'#E6E0FF', missile:true, wbStar:1});
+    e.queue.push({t:0.95, fn:() => wbSfx('wb_star', {vol:0.5, pri:3, max:2, cd:120})}); },
+  aeOrbit(e){ const ds = xds(e), n = e.phase >= 2 ? 16 : 12, a0 = Math.random()*TAU; wbPose(e, 'both', 1.2);
+    for (let k=0;k<3;k++) e.queue.push({t:k*0.42, fn:() => { for (let i=0;i<n;i++){ const a = a0 + i/n*TAU + k*TAU/(n*2.2); const p = xproj(e.x, e.y, a, 150 + k*22, 8, 13*ds, k === 1 ? '#3FE0D0' : '#B9A8FF'); p.curve = 0.55*(k % 2 ? -1 : 1); } }}); },
+  aeMeridian(e){ const ds = xds(e), a0 = Math.atan2(P.y - e.y, P.x - e.x) + 0.6, n = e.phase === 3 ? 4 : 3, dir = Math.random() < 0.5 ? 1 : -1; wbPose(e, 'both', 2.6);
+    for (let w=0;w<6;w++) e.queue.push({t:w*0.42, fn:() => { for (let k=0;k<n;k++){ const aa = a0 + dir*w*0.26 + k*TAU/n; zones.push({kind:'beam', x1:e.x, y1:e.y, x2:e.x + Math.cos(aa)*1500*S, y2:e.y + Math.sin(aa)*1500*S, w:18*S, warn:0.7, life:0.32, dmg:22*ds, col:'#3FE0D0'}); } }}); },
+  aeWard(e){ if (enemies.some(a => a.wbAnchor && !a.dead)) return XB_ATK.aePull(e);
+    const pts = e.phase === 1 ? [[0.2, 0.3], [0.8, 0.3]] : [[0.2, 0.3], [0.8, 0.3], [0.5, 0.85]], hp = e.max*(e.phase === 1 ? 0.03 : 0.045);
+    for (const [fx, fy] of pts){ const a = spawnMob('tank', {x:W*fx, y:H*fy});
+      Object.assign(a, {name:'Star Anchor', col:'#3FE0D0', acc:'', face:'none', wbAnchor:true, spd:0, dmg:0, beh:'still', r:28*S, xp:6, elite:false}); a.hp = a.max = hp; }
+    wbPose(e, 'gesture', 1.0); wbSfx('wb_barrier', {vol:0.8});
+    banner('EVENT HORIZON', `Destroy the ${pts.length} Star Anchors: his barrier stops your shots`, '#3FE0D0'); ring(e.x, e.y, e.r*3, '#3FE0D0', 0.6); },
+  aeExpanse(e){ wbUltimate(e, 'aeth'); },
+  // ----- Malrath -----
+  maRend(e){ const ds = xds(e), sp = 1150*S;
+    const fire = (a, x, y) => { const len = wbRayLen(x, y, a); zones.push({kind:'rend', x, y, ang:a, len, spd:sp, warn:0.38, wm:0.38, life:len/sp, lm:len/sp, w:84*S, dmg:18*ds, col:'#FF3B55'}); };
+    const vols = e.phase === 3 ? 4 : 3;
+    for (let v=0;v<vols;v++) e.queue.push({t:v*0.34, fn:() => { wbPose(e, v % 2 ? 'swipeL' : 'swipe', 0.32); const a = Math.atan2(P.y - e.y, P.x - e.x);
+      if (e.phase === 1) fire(a, e.x, e.y); else for (const o of [-0.32, 0, 0.32]) fire(a + o, e.x, e.y);
+      if (e.phase === 3 && v === vols - 1){ const side = Math.random() < 0.5 ? 0 : W; fire(side ? Math.PI : 0, side, P.y); }
+      e.queue.push({t:0.38, fn:() => wbSfx(v % 2 ? 'wb_rend2' : 'wb_rend', {vol:0.7, pri:3, max:3})}); }});
+    e.atkHold = 0.4 + vols*0.34; },
+  maCleave(e){ const ds = xds(e), tx = P.x, ty = P.y, dx = tx - e.x, dy = ty - e.y, d = Math.hypot(dx, dy) || 1, L = Math.min(d - 60*S, 240*S);
+    const x1 = e.x + dx/d*Math.max(0, L), y1 = e.y + dy/d*Math.max(0, L);
+    wbPose(e, 'raiseR', 1.1); e.hop = {x0:e.x, y0:e.y, x1, y1, t:0, max:0.55};
+    e.queue.push({t:0.55, fn:() => { e.hop = null; e.x = x1; e.y = y1; shake = Math.max(shake, reduce ? 0 : 8); const a = Math.atan2(P.y - e.y, P.x - e.x);
+      zones.push({kind:'cone', x:e.x, y:e.y, ang:a, spread:1.05, range:250*S, warn:0.55, life:0.28, dps:110*ds, col:'#E0283C', follow:e, wbCleave:1}); wbSfx('wb_cleave', {vol:0.9});
+      e.queue.push({t:0.5, fn:() => wbPose(e, 'swipe', 0.4)}); }}); },
+  maFireball(e){ const ds = xds(e), n = e.phase === 3 ? 3 : e.phase === 2 ? 2 : 1;
+    wbPose(e, 'raiseR', 0.85 + n*0.4); e.rootT = Math.max(e.rootT || 0, 0.8); wbSfx('wb_fire_charge', {vol:0.6});
+    for (let i=0;i<n;i++) e.queue.push({t:0.8 + i*0.4, fn:() => { const h = wbHand(e, 1), p = i ? nearP(170) : {x:P.x, y:P.y}, tr = Math.max(0.45, Math.hypot(p.x - h.x, p.y - h.y)/(900*S));
+      zones.push({kind:'fireball', x:p.x, y:p.y, x1:h.x, y1:h.y, r:26*S, warn:tr, wm:tr, life:0.01, col:'#FF5A1F'});
+      zones.push({kind:'burst', x:p.x, y:p.y, r:92*S, warn:tr, dmg:26*ds, col:'#FF5A1F', wbFire:1});
+      zones.push({kind:'pool', x:p.x, y:p.y, r:78*S, warn:tr, life:4.2, dps:15*ds, slow:0, col:'#9A1E0A'});
+      e.queue.push({t:tr, fn:() => wbSfx('wb_fire_boom', {vol:0.85})}); }});
+    e.atkHold = 0.8 + n*0.4; },
+  maTempest(e){ const ds = xds(e), waves = e.phase === 3 ? 5 : 3;
+    wbPose(e, 'gesture', 1.0); wbSfx('wb_blades_form', {vol:0.7});
+    let gap = rnd(0.25, 0.75);
+    for (let w=0;w<waves;w++){ const axis = w % 2 ? 'y' : 'x', from = Math.random() < 0.5 ? 0 : 1; gap = clamp(gap + rnd(-0.3, 0.3), 0.18, 0.82);
+      const span = axis === 'x' ? W : H, other = axis === 'x' ? H : W, tr = span/(560*S);
+      zones.push({kind:'sweep', axis, from, gap:gap*other, gw:(e.phase === 3 ? 150 : 175)*S, warn:1.1 + w*0.95, wm:1.1, life:tr, lm:tr, dmg:22*ds, col:'#FF3B55'});
+      e.queue.push({t:1.1 + w*0.95, fn:() => wbSfx('wb_blades', {vol:0.6, pri:3, max:2})}); }
+    e.atkHold = 1.2 + waves*0.95; },
+  maStomp(e){ const ds = xds(e), a0 = Math.random()*TAU, n = e.phase === 3 ? 7 : 5; wbPose(e, 'gesture', 0.9);
+    zones.push({kind:'burst', x:e.x, y:e.y, r:140*S, warn:0.85, dmg:26*ds, col:'#FF8A3A'});
+    for (let k=0;k<n;k++){ const aa = a0 + k*TAU/n; zones.push({kind:'beam', x1:e.x, y1:e.y, x2:e.x + Math.cos(aa)*1500*S, y2:e.y + Math.sin(aa)*1500*S, w:30*S, warn:1.05, life:0.45, dmg:24*ds, col:'#FF5A1F'}); }
+    e.queue.push({t:0.85, fn:() => wbSfx('wb_fire_boom', {vol:0.6, rate:0.8})}); },
+  maBanner(e){ if (enemies.some(a => a.wbBanner && !a.dead)) return XB_ATK.maFireball(e);
+    const hp = e.max*0.04;
+    for (const fx of [0.15, 0.85]){ const a = spawnMob('tank', {x:W*fx, y:H*0.62});
+      Object.assign(a, {name:'War Banner', col:'#8A0E1E', acc:'', face:'none', wbBanner:true, spd:0, dmg:0, beh:'still', r:26*S, xp:6, elite:false, callT:2}); a.hp = a.max = hp; }
+    wbPose(e, 'gesture', 0.9); banner('WAR BANNERS', 'Topple them: they call ash soldiers and drive him faster', '#FF8A3A'); },
+  maDominion(e){ wbUltimate(e, 'mal'); },
+});
+// Aetherion's orbit lattice curves; Event Horizon holds your shots still; the push knocks you back
+{ const _up = update; update = function(dt){
+    if (run && run.wbFight && state === 'play'){
+      for (const p of eprojs){ if (!p.curve) continue; const a = Math.atan2(p.vy, p.vx) + p.curve*dt, s = Math.hypot(p.vx, p.vy); p.vx = Math.cos(a)*s; p.vy = Math.sin(a)*s; }
+      const e = run.wbWardOn && enemies.find(x => x.wb === 'aeth' && !x.dead);
+      if (e){ const R = e.r*2.7; for (const b of bullets){ if (b.dead || b.kind === 'hole') continue; const dx = b.x - e.x, dy = b.y - e.y, d = Math.hypot(dx, dy); if (d > R) continue;
+          const k = Math.pow(0.004, dt*(1.4 - d/R)); b.vx *= k; b.vy *= k; b.held = (b.held || 0) + dt; if (b.held > 0.45) b.life = Math.min(b.life, 0.05); if (b.hit && b.hit.add) b.hit.add(e);
+          if (Math.random() < 0.03) wbSfx('wb_barrier', {vol:0.25, pri:2, cd:400, max:1}); } }
+      if (run.wbKnock){ const k = run.wbKnock; k.t -= dt; if (k.t <= 0) run.wbKnock = null; else { P.x = clamp(P.x + k.vx*dt, P.r*S, W - P.r*S); P.y = clamp(P.y + k.vy*dt, P.r*S, H - P.r*S); } }
+    }
+    return _up.apply(this, arguments); }; }
+
+// ---------- the domain ultimates ----------
+// Activation (he stops and gestures, the world goes quiet), the domain opens, waves of hazards that always leave safe
+// ground and come faster as it goes on, then a final attack you must step away from.
+function wbUltimate(e, b){
+  const B = WB_BOSS[b], ds = xds(e), cs = 120*S, nx = Math.ceil(W/cs), ny = Math.ceil(H/cs), open = 1.5;
+  const gaps = [1.3, 1.2, 1.05, 0.95, 0.85], waves = gaps.length; let t = open + 1.0; const times = []; for (const g of gaps){ times.push(t); t += g; }
+  run.wbUlt = {b, t:0, dur:t + 1.8, open};
+  e.atkHold = run.wbUlt.dur + 0.6; e.casting = open; e.rootT = Math.max(e.rootT || 0, open + 0.2); wbPose(e, 'gesture', open + 0.4);
+  banner(B.ult, B.ultSub, B.col); try { AU.duck(0.6, open); } catch(err){}
+  wbSfx(b === 'aeth' ? 'wb_domain_aeth' : 'wb_citadel', {vol:1, pri:5, max:1});
+  for (let w=0;w<waves;w++){
+    if (b === 'mal' && w % 2 === 1){ // Crimson Dominion: every other wave is a blade sweep instead of a grid
+      const axis = w % 4 === 1 ? 'x' : 'y', span = axis === 'x' ? W : H, other = axis === 'x' ? H : W, tr = span/(620*S);
+      zones.push({kind:'sweep', axis, from:Math.random() < 0.5 ? 0 : 1, gap:rnd(0.2, 0.8)*other, gw:160*S, warn:times[w], wm:1.0, life:tr, lm:tr, dmg:22*ds, col:'#FF3B55'});
+      e.queue.push({t:times[w], fn:() => wbSfx('wb_blades', {vol:0.6, pri:3, max:2})}); continue; }
+    for (let i=0;i<nx;i++) for (let j=0;j<ny;j++){
+      const lit = b === 'aeth' ? ((i + j + w) % 2 === 0) : (((i + j*2 + w) % 3) !== 0);
+      if (!lit) continue;
+      zones.push({kind:'wcell', x:(i + 0.5)*cs, y:(j + 0.5)*cs, w:cs*0.94, warn:times[w], life:0.3, dmg:18*ds, col:b === 'aeth' ? '#B9A8FF' : '#FF5A1F', ult:b === 'aeth' ? 1 : 2});
+    }
+    e.queue.push({t:times[w], fn:() => wbSfx(b === 'aeth' ? 'wb_star' : 'wb_fire_boom', {vol:0.45, pri:3, max:2, rate:b === 'aeth' ? 0.8 : 1.2})});
+  }
+  // the finale: Aetherion collapses the domain into himself; Malrath sends one huge sweep with a single gap
+  if (b === 'aeth'){ zones.push({kind:'burst', x:e.x, y:e.y, r:240*S, warn:t + 0.9, dmg:32*ds, col:'#E6F6FF'}); e.queue.push({t:t, fn:() => wbSfx('wb_domain_end', {vol:1, pri:5})}); }
+  else { const tr = W/(900*S); zones.push({kind:'sweep', axis:'x', from:e.x < W/2 ? 0 : 1, gap:rnd(0.25, 0.75)*H, gw:190*S, warn:t + 0.6, wm:1.4, life:tr, lm:tr, dmg:34*ds, col:'#FF2040', big:1}); e.queue.push({t:t, fn:() => wbSfx('wb_final_slash', {vol:1, pri:5})}); }
+}
+
+// ---------- phases ----------
+{ const _bp = bossPhaseTick; bossPhaseTick = function(e){
+    if (!e.wb) return _bp.apply(this, arguments);
+    const B = wbB(e); e.phase = e.phase || 1;
+    const f = e.hp/e.max, next = f < 0.33 ? 3 : f < 0.66 ? 2 : 1;
+    if (next > e.phase){
+      e.phase = next; e.attacks = B.atk[next - 1].slice(); e.atkIdx = 0;
+      if (next === 3){ e.spd *= 1.22; e.ultT = 1.6; }
+      e.atkT = Math.max(e.atkT, 1.6); e.untargetable = true; e.phaseLock = 1.3; wbPose(e, 'gesture', 1.3);
+      banner(next === 2 ? 'PHASE 2' : 'PHASE 3', next === 2 ? B.p2 : B.p3, next === 3 ? C.red : B.col);
+      ring(e.x, e.y, e.r*4, B.col, 0.7); ring(e.x, e.y, e.r*2.6, '#FFFFFF', 0.5); burst(e.x, e.y, B.col, 40, 1.6);
+      shake = Math.max(shake, reduce ? 0 : 16); run.flash = Math.max(run.flash || 0, 0.4);
+      if (run.wbFight){ run.wbFight.phase = next; run.wbFight.flash = 1.0; }
+      for (const o of eprojs) o.life = Math.min(o.life, 0.05);
+      (typeof auSfx === 'function' ? auSfx('boss_land', {vol:0.7, pri:5}) : beep(90, 0.6, 'sawtooth', 0.06, 45));
+    }
+  }; }
+{ const _up = update; update = function(dt){ const r = _up.apply(this, arguments);
+    try { if (run && run.wbFight && state === 'play') wbTick(dt); } catch(err){ console.error(err); }
+    return r; }; }
+function wbTick(dt){
+  const F = run.wbFight; F.flash = Math.max(0, F.flash - dt);
+  run.wbWardOn = enemies.some(a => a.wbAnchor && !a.dead);
+  const bannersUp = enemies.filter(a => a.wbBanner && !a.dead);
+  F.hint = run.wbWardOn ? 'Destroy the Star Anchors' : bannersUp.length ? 'Topple the War Banners' : null;
+  if (run.wbUlt){ run.wbUlt.t += dt; if (run.wbUlt.t > run.wbUlt.dur) run.wbUlt = null; }
+  for (const e of enemies) if (e.wb && e.pose){ e.pose.t += dt; if (e.pose.dur && e.pose.t > e.pose.dur && e.pose.k !== 'idle') wbPose(e, 'idle', 0); }
+  if (duoGuest()) return;
+  const e = wbBoss();
+  if (e){
+    if (!e.intro){ e.y = clamp(e.y, Math.min(H*0.4, e.r*2.3), H - e.r*1.1); e.x = clamp(e.x, e.r, W - e.r); }   // the tall figure stays clear of the top HUD
+    if (e.phaseLock > 0){ e.phaseLock -= dt; if (e.phaseLock <= 0){ e.phaseLock = 0; e.untargetable = false; } }
+    if (e.casting > 0) e.casting -= dt;
+    if (e.atkHold > 0){ e.atkHold -= dt; e.atkT = Math.max(e.atkT, 0.6); }
+    if (e.phase === 3 && !e.intro){ e.ultT -= dt; if (e.ultT <= 0 && !run.wbUlt && !(e.atkHold > 0)){ e.ultT = 40; XB_ATK[e.wb === 'aeth' ? 'aeExpanse' : 'maDominion'](e); } }
+    if (bannersUp.length) e.atkT -= dt*0.3*bannersUp.length;
+    for (const bn of bannersUp){ bn.callT -= dt; if (bn.callT <= 0){ bn.callT = 3.6;
+      for (let i=0;i<2;i++){ if (enemies.length >= CAP) break; const m = spawnMob('grunt', {x:clamp(bn.x + rnd(-50,50)*S, 20, W - 20), y:clamp(bn.y + rnd(-40,40)*S, 30, H - 20)}); Object.assign(m, {name:'Ash Soldier', col:'#4A3A36', acc:'', face:'snarl'}); }
+      burst(bn.x, bn.y - 30*S, '#FF8A3A', 10, 0.8); } }
+  }
+  if (run.bossSpawned && !run.bossDead && run.t - F.t0 > F.dur && !F.timeout){ F.timeout = true; wbTimeout(); }
+}
+function wbTimeout(){
+  const e = wbBoss(); if (e){ burst(e.x, e.y, e.col, 60, 2); e.dead = true; }
+  banner('THE BOSS WITHDRAWS', 'The portal casts you out', C.red);
+  state = 'clear'; setTimeout(() => { try { showResults(false); } catch(err){ console.error(err); } }, reduce ? 300 : 1500);
+}
+// Event Horizon: 85% less damage while a Star Anchor stands (a Duos partner sees the anchors too, so it works there as well)
+{ const _dd = dealDamage; dealDamage = function(e, dmg, o){ if (e && e.wb && run && run.wbWardOn) dmg *= 0.15; return _dd.call(this, e, dmg, o); }; }
+{ const _et = enemyTarget; enemyTarget = function(e){ if (e && (e.wbAnchor || e.wbBanner)) return {x:e.x, y:e.y}; return _et.apply(this, arguments); }; }
+
+// ---------- the new hazards ----------
+{ const _zt = zonesTick; zonesTick = function(dt){ const r = _zt.apply(this, arguments);
+    if (!run || !run.wbFight) return r;
+    const pr = P.r*S, out = DUO_OUT();
+    if (run.wbUlt && run.wbUlt.b === 'aeth' && run.wbUlt.t > run.wbUlt.open) P.slow = Math.max(P.slow, 0.3);
+    for (const z of zones){
+      const live = z.warn <= 0 && z.life > 0;
+      if ((z.kind === 'push' || z.kind === 'conv') && z.follow && !z.follow.dead && z.warn > 0){ z.x = z.follow.x; z.y = z.follow.y; if (z.kind === 'conv') z.len = wbRayLen(z.x, z.y, z.ang); }
+      if (z.kind === 'well' && live){
+        const dx = z.x - P.x, dy = z.y - P.y, d = Math.hypot(dx, dy);
+        if (!out && d < z.r && d > 4*S){ const k = (1 - d/z.r)*0.65 + 0.35; P.x += dx/d*z.str*S*k*dt; P.y += dy/d*z.str*S*k*dt; P.slow = Math.max(P.slow, 0.2); }
+        if (z.life < 0.12 && !z.fired){ z.fired = true; burst(z.x, z.y, '#3FE0D0', 26, 1.4); ring(z.x, z.y, z.core*1.6, '#E6FFFB', 0.4); if (!out && d < z.core + pr*0.6) hurt(z.dmg); }
+      }
+      if (z.kind === 'push' && live && !z.hit){
+        const R = z.r*(1 - z.life/z.lm), d = Math.hypot(P.x - z.x, P.y - z.y);
+        if (!out && d < R + pr && d > R - 46*S){ z.hit = true; hurt(z.dmg); const a = Math.atan2(P.y - z.y, P.x - z.x); run.wbKnock = {vx:Math.cos(a)*z.kb*S, vy:Math.sin(a)*z.kb*S, t:0.32}; }
+      }
+      if (z.kind === 'conv' && live){
+        const k = 1 - z.life/z.lm, dx = Math.cos(z.ang), dy = Math.sin(z.ang), hx = z.x + dx*z.len*k, hy = z.y + dy*z.len*k;
+        if (!z.hit && !out && segDist(P.x, P.y, z.x, z.y, hx, hy) < z.w/2 + pr*0.5){ z.hit = true; hurt(z.dmg); }
+        if (z.life < 0.08 && !z.fired){ z.fired = true; const ex = z.x + dx*z.len, ey = z.y + dy*z.len; burst(ex, ey, '#B98CFF', 40, 1.8); ring(ex, ey, z.br*1.3, '#FFFFFF', 0.5); if (!out && Math.hypot(P.x - ex, P.y - ey) < z.br + pr*0.5 && !z.hit) hurt(z.dmg2); }
+      }
+      if (z.kind === 'rend' && live && !z.hit){
+        const tr = z.lm - z.life, along = tr*z.spd, cx = z.x + Math.cos(z.ang)*along, cy = z.y + Math.sin(z.ang)*along;
+        const rx = P.x - cx, ry = P.y - cy, pa = rx*Math.cos(z.ang) + ry*Math.sin(z.ang), pp = -rx*Math.sin(z.ang) + ry*Math.cos(z.ang);
+        if (!out && Math.abs(pa) < 26*S && Math.abs(pp) < z.w/2 + pr*0.4){ z.hit = true; hurt(z.dmg); burst(P.x, P.y, '#FF3B55', 10, 0.8); }
+      }
+      if (z.kind === 'sweep' && live && !z.hit){
+        const k = 1 - z.life/z.lm, span = z.axis === 'x' ? W : H, c = z.from ? span*(1 - k) : span*k, me = z.axis === 'x' ? P.x : P.y, oth = z.axis === 'x' ? P.y : P.x;
+        if (!out && Math.abs(me - c) < (z.big ? 34 : 22)*S + pr*0.4 && Math.abs(oth - z.gap) > z.gw/2 - pr*0.3){ z.hit = true; hurt(z.dmg); }
+      }
+      if (z.kind === 'wcell' && z.warn <= 0 && !z.fired){ z.fired = true;
+        if (!out && Math.abs(P.x - z.x) < z.w/2 + pr*0.4 && Math.abs(P.y - z.y) < z.w/2 + pr*0.4) hurt(z.dmg);
+        if (Math.random() < 0.3) burst(z.x, z.y, z.col, 6, 0.8); }
+    }
+    return r; }; }
+
+// ---------- drawing: arenas ----------
+{ const _bt = buildThemeBg; buildThemeBg = function(th){
+    if (th !== 'wb_aeth' && th !== 'wb_mal') return _bt.apply(this, arguments);
+    const cnv = document.createElement('canvas'); cnv.width = Math.ceil(W*dpr); cnv.height = Math.ceil(H*dpr);
+    const g = cnv.getContext('2d'); g.scale(dpr, dpr);
+    const R = mulberry(hashStr(th) + 11), rr = (a, b) => a + R()*(b - a), cx = W/2, cy = H*0.52, M = Math.max(W, H);
+    if (th === 'wb_aeth'){
+      // Cosmic Sanctuary: deep space at the edges, an ancient celestial stone floor in the middle
+      const gr = g.createRadialGradient(cx, cy, 0, cx, cy, M*0.8); gr.addColorStop(0, '#2B2370'); gr.addColorStop(0.55, '#140F3C'); gr.addColorStop(1, '#05040F'); g.fillStyle = gr; g.fillRect(0, 0, W, H);
+      for (let i=0;i<7;i++){ const x = rr(0, W), y = rr(0, H), r0 = rr(120, 320)*S, n = g.createRadialGradient(x, y, 0, x, y, r0); const c = i % 3 === 0 ? '63,224,208' : i % 3 === 1 ? '155,123,255' : '255,95,168'; n.addColorStop(0, `rgba(${c},.16)`); n.addColorStop(1, `rgba(${c},0)`); g.fillStyle = n; g.fillRect(x - r0, y - r0, r0*2, r0*2); }
+      for (let i=0;i<W*H/2600;i++){ g.fillStyle = R() < 0.15 ? '#FFE07A' : R() < 0.5 ? '#E6E0FF' : '#9B8CFF'; g.globalAlpha = rr(0.3, 1); const s = rr(0.6, 2.2); g.fillRect(rr(0, W), rr(0, H), s, s); } g.globalAlpha = 1;
+      const RX = M*0.42, RY = M*0.3; g.save(); g.beginPath(); g.ellipse(cx, cy, RX, RY, 0, 0, TAU); g.fillStyle = '#2A2558'; g.fill(); g.lineWidth = 6; g.strokeStyle = '#120D3A'; g.stroke(); g.clip();
+      for (let ring0 = 0; ring0 < 6; ring0++){ const n = 8 + ring0*6, r0 = ring0*M*0.075, r1 = (ring0 + 1)*M*0.075; for (let k=0;k<n;k++){ const a0 = k/n*TAU + ring0*0.2, a1 = (k + 1)/n*TAU + ring0*0.2;
+          g.beginPath(); g.moveTo(cx + Math.cos(a0)*r0, cy + Math.sin(a0)*r0*0.71); g.lineTo(cx + Math.cos(a0)*r1, cy + Math.sin(a0)*r1*0.71); g.lineTo(cx + Math.cos(a1)*r1, cy + Math.sin(a1)*r1*0.71); g.lineTo(cx + Math.cos(a1)*r0, cy + Math.sin(a1)*r0*0.71); g.closePath();
+          g.fillStyle = `rgb(${46 + (R()*16|0)},${40 + (R()*14|0)},${92 + (R()*20|0)})`; g.fill(); g.strokeStyle = 'rgba(10,6,30,.55)'; g.lineWidth = 2; g.stroke(); } }
+      g.restore();
+      g.strokeStyle = 'rgba(63,224,208,.45)'; g.lineWidth = 2.5; for (let k=1;k<=4;k++){ g.beginPath(); g.ellipse(cx, cy, k*M*0.085, k*M*0.06, 0, 0, TAU); g.stroke(); }
+      g.strokeStyle = 'rgba(255,210,122,.35)'; g.lineWidth = 3; g.beginPath(); g.ellipse(cx, cy, RX*0.93, RY*0.93, 0, 0, TAU); g.stroke();
+      g.setLineDash([4, 10]); g.strokeStyle = 'rgba(155,123,255,.45)'; g.lineWidth = 2; for (let k=0;k<12;k++){ const a = k/12*TAU; g.beginPath(); g.moveTo(cx + Math.cos(a)*M*0.085, cy + Math.sin(a)*M*0.06); g.lineTo(cx + Math.cos(a)*RX*0.9, cy + Math.sin(a)*RY*0.9); g.stroke(); } g.setLineDash([]);
+      for (let k=0;k<12;k++){ const a = k/12*TAU + 0.26, x = cx + Math.cos(a)*RX*0.78, y = cy + Math.sin(a)*RY*0.78; g.fillStyle = 'rgba(63,224,208,.6)'; star(g, x, y, 5*S, 4); g.fill(); }
+      g.strokeStyle = 'rgba(230,224,255,.3)'; g.lineWidth = 1.2; for (let c=0;c<5;c++){ let x = rr(0, W), y = rr(0, H*0.25); g.beginPath(); g.moveTo(x, y); for (let k=0;k<4;k++){ x += rr(-90, 90)*S; y += rr(-30, 50)*S; g.lineTo(x, y); } g.stroke(); }
+    } else {
+      // Crimson Citadel: dark flagstones, crimson markings, towers and braziers
+      const gr = g.createRadialGradient(cx, cy, 0, cx, cy, M*0.8); gr.addColorStop(0, '#3A1410'); gr.addColorStop(0.55, '#1E0A08'); gr.addColorStop(1, '#070203'); g.fillStyle = gr; g.fillRect(0, 0, W, H);
+      const ts = 64*S; g.strokeStyle = 'rgba(0,0,0,.45)'; g.lineWidth = 2;
+      for (let y = 0; y < H + ts; y += ts) for (let x = ((y/ts) % 2 ? ts/2 : 0) - ts; x < W + ts; x += ts){ g.fillStyle = `rgba(${40 + (R()*18|0)},${18 + (R()*10|0)},${16 + (R()*8|0)},.55)`; g.fillRect(x + 2, y + 2, ts - 4, ts - 4); g.strokeRect(x + 2, y + 2, ts - 4, ts - 4); }
+      g.strokeStyle = 'rgba(224,40,60,.55)'; g.lineWidth = 4; g.beginPath(); g.ellipse(cx, cy, M*0.33, M*0.23, 0, 0, TAU); g.stroke(); g.lineWidth = 2; g.beginPath(); g.ellipse(cx, cy, M*0.36, M*0.255, 0, 0, TAU); g.stroke();
+      for (let k=0;k<10;k++){ const a = k/10*TAU, x = cx + Math.cos(a)*M*0.345, y = cy + Math.sin(a)*M*0.243; g.save(); g.translate(x, y); g.rotate(a); g.strokeStyle = 'rgba(255,59,85,.6)'; g.lineWidth = 2.5; g.beginPath(); g.moveTo(-10*S, -6*S); g.lineTo(0, 8*S); g.lineTo(10*S, -6*S); g.moveTo(0, -10*S); g.lineTo(0, 4*S); g.stroke(); g.restore(); }
+      for (let k=0;k<6;k++){ const a = k/6*TAU + 0.3; g.strokeStyle = 'rgba(224,40,60,.3)'; g.lineWidth = 3; g.beginPath(); g.moveTo(cx + Math.cos(a)*M*0.08, cy + Math.sin(a)*M*0.06); g.lineTo(cx + Math.cos(a)*M*0.3, cy + Math.sin(a)*M*0.21); g.stroke(); }
+      for (let i=0;i<7;i++){ let x = rr(0, W), y = rr(H*0.2, H); g.strokeStyle = 'rgba(255,90,31,.5)'; g.lineWidth = rr(2, 4); g.beginPath(); g.moveTo(x, y); for (let k=0;k<6;k++){ x += rr(-60, 60)*S; y += rr(-60, 60)*S; g.lineTo(x, y); } g.stroke(); g.strokeStyle = 'rgba(255,224,122,.45)'; g.lineWidth = 1; g.stroke(); }
+      g.fillStyle = '#140605'; g.strokeStyle = '#000'; g.lineWidth = 3; for (let x = 0; x < W; x += 46*S){ const h = rr(30, 50)*S; g.fillRect(x, 0, 40*S, h); g.fillRect(x + 4*S, h, 32*S, 8*S); }
+      for (const fx of [0.18, 0.82]){ const x = W*fx; g.fillStyle = '#1E0807'; g.fillRect(x - 34*S, 0, 68*S, 92*S); g.strokeRect(x - 34*S, -4, 68*S, 96*S); for (let k=0;k<3;k++) g.fillRect(x - 34*S + k*26*S, 92*S, 16*S, 10*S); g.fillStyle = '#FF5A1F'; g.globalAlpha = 0.6; g.fillRect(x - 6*S, 40*S, 12*S, 22*S); g.globalAlpha = 1; }
+      for (const [fx, fy] of [[0.06, 0.24], [0.94, 0.24], [0.06, 0.88], [0.94, 0.88]]){ const x = W*fx, y = H*fy, n = g.createRadialGradient(x, y, 0, x, y, 90*S); n.addColorStop(0, 'rgba(255,138,58,.35)'); n.addColorStop(1, 'rgba(255,138,58,0)'); g.fillStyle = n; g.fillRect(x - 90*S, y - 90*S, 180*S, 180*S); g.fillStyle = '#2A0A0A'; g.strokeStyle = '#000'; g.fillRect(x - 12*S, y - 4*S, 24*S, 16*S); g.strokeRect(x - 12*S, y - 4*S, 24*S, 16*S); }
+    }
+    return cnv; }; }
+{ const _dd = drawDecals; drawDecals = function(){ const r = _dd.apply(this, arguments); const now = performance.now()/1000;
+    try { if (run && run.wbFight) wbDrawArena(now); if (run && (run.wbSig || run.wbBrands)) wbDrawSigFx(now); } catch(err){ console.error(err); }
+    return r; }; }
+function wbDrawArena(now){
+  const c = ctx, F = run.wbFight, b = F.b, U = run.wbUlt, low = SET.particles === 'low', cx = W/2, cy = H*0.52, M = Math.max(W, H);
+  if (b === 'aeth'){
+    c.save(); c.translate(cx, cy); c.strokeStyle = 'rgba(185,168,255,.35)'; c.lineWidth = 2*S;
+    for (let i=0;i<2;i++){ c.save(); c.rotate(now*(0.05 + i*0.03)*(i ? -1 : 1)); c.setLineDash([18*S, 12*S]); c.beginPath(); c.ellipse(0, 0, M*(0.2 + i*0.12), M*(0.14 + i*0.085), 0, 0, TAU); c.stroke(); c.restore(); }
+    c.setLineDash([]); c.restore();
+    for (let i=0;i<6;i++){ const a = i/6*TAU + now*0.05, x = cx + Math.cos(a)*M*0.47, y = cy + Math.sin(a)*M*0.33 + Math.sin(now*1.3 + i)*8*S; c.save(); c.translate(x, y); c.rotate(Math.sin(now*0.7 + i)*0.3);
+      c.fillStyle = '#1C1550'; c.strokeStyle = '#0B0826'; c.lineWidth = 3*S; c.beginPath(); c.moveTo(-14*S, 6*S); c.lineTo(-6*S, -18*S); c.lineTo(12*S, -10*S); c.lineTo(10*S, 10*S); c.closePath(); c.fill(); c.stroke();
+      c.strokeStyle = 'rgba(63,224,208,.8)'; c.lineWidth = 1.5*S; c.beginPath(); c.moveTo(-6*S, -10*S); c.lineTo(4*S, -4*S); c.stroke(); c.restore(); }
+  } else {
+    for (const [fx, fy] of [[0.06, 0.24], [0.94, 0.24], [0.06, 0.88], [0.94, 0.88]]){ const x = W*fx, y = H*fy - 6*S; for (let k=0;k<3;k++){ const h = (18 + 8*Math.sin(now*9 + k*2 + fx*7))*S, w = (7 - k*1.5)*S; c.fillStyle = k === 0 ? '#E0283C' : k === 1 ? '#FF8A3A' : '#FFE07A'; c.beginPath(); c.moveTo(x - w, y); c.quadraticCurveTo(x, y - h*1.3, x + w, y); c.closePath(); c.fill(); } }
+    for (let i=0;i<5;i++){ const x = W*(0.15 + i*0.175), y = H*0.16 + Math.sin(now*1.5 + i)*6*S; c.save(); c.translate(x, y); c.rotate(Math.PI/2 + Math.sin(now + i)*0.12); c.globalAlpha = 0.55; c.fillStyle = '#FF9BA6'; c.strokeStyle = '#3A0A10'; c.lineWidth = 2*S; c.beginPath(); c.moveTo(0, -22*S); c.lineTo(5*S, 8*S); c.lineTo(0, 14*S); c.lineTo(-5*S, 8*S); c.closePath(); c.fill(); c.stroke(); c.restore(); }
+  }
+  if (!low){ for (let i=0;i<26;i++){ const sp = 12 + (i*37 % 23), x = (i*197.3 + now*sp*(b === 'aeth' ? 0.6 : 0.3)) % W, y = b === 'aeth' ? (i*131.7 + Math.sin(now*0.4 + i)*20) % H : (H - ((i*91.1 + now*sp*1.6) % H));
+      c.globalAlpha = 0.25 + 0.25*Math.sin(now*2 + i); c.fillStyle = b === 'aeth' ? (i % 4 ? '#E6E0FF' : '#FFE07A') : (i % 3 ? '#FF8A3A' : '#FFE07A'); c.fillRect(x, y, 2.4*S, 2.4*S); } c.globalAlpha = 1; }
+  // the domains transform the arena: a circle expands from the middle and everything inside becomes the domain
+  if (U){ const out = Math.min(1, Math.max(0, (U.dur - U.t)/0.8));
+    const R = Math.hypot(W, H)*Math.min(1, Math.max(0.02, (U.t - U.open*0.7)/0.6))*(U.t > U.dur - 0.8 ? out : 1);
+    if (U.t > U.open*0.7){
+    c.save(); c.beginPath(); c.arc(cx, cy, R, 0, TAU); c.clip();
+    if (b === 'aeth'){ c.globalAlpha = 0.85; c.fillStyle = '#04030E'; c.fillRect(0, 0, W, H);
+      for (let i=0;i<120;i++){ const x = (i*373.1) % W, y = (i*211.7 + now*6*(i % 3)) % H; c.globalAlpha = 0.3 + 0.6*Math.abs(Math.sin(now*1.5 + i)); c.fillStyle = i % 9 ? '#E6E0FF' : '#FFE07A'; c.fillRect(x, y, 2*S, 2*S); }
+      for (let i=0;i<3;i++){ const x = W*(0.2 + i*0.3), y = H*(0.3 + 0.2*Math.sin(i*2)), n = c.createRadialGradient(x, y, 0, x, y, 240*S); n.addColorStop(0, i % 2 ? 'rgba(63,224,208,.22)' : 'rgba(155,123,255,.26)'); n.addColorStop(1, 'rgba(0,0,0,0)'); c.globalAlpha = 1; c.fillStyle = n; c.fillRect(x - 240*S, y - 240*S, 480*S, 480*S); }
+      c.globalAlpha = 0.6; c.strokeStyle = '#B9A8FF'; c.lineWidth = 2*S; c.translate(cx, cy); c.rotate(now*0.15); for (let i=0;i<3;i++){ c.beginPath(); c.ellipse(0, 0, (180 + i*130)*S, (120 + i*85)*S, i*0.6, 0, TAU); c.stroke(); }
+      c.fillStyle = '#FFD27A'; for (let i=0;i<10;i++){ const a = i/10*TAU; star(c, Math.cos(a)*440*S, Math.sin(a)*290*S, 6*S, 4); c.fill(); } }
+    else { c.globalAlpha = 0.6; c.fillStyle = '#2A0204'; c.fillRect(0, 0, W, H); c.globalAlpha = 1;
+      c.strokeStyle = 'rgba(255,40,60,.55)'; c.lineWidth = 3*S; for (let k=0;k<14;k++){ const a = k/14*TAU, L = Math.min(1, U.t/1.2)*M*0.5; c.beginPath(); c.moveTo(cx, cy); c.lineTo(cx + Math.cos(a)*L, cy + Math.sin(a)*L*0.7); c.stroke(); }
+      for (let i=0;i<8;i++){ const a = i/8*TAU + now*0.6, x = cx + Math.cos(a)*M*0.36, y = cy + Math.sin(a)*M*0.25; c.save(); c.translate(x, y); c.rotate(a + Math.PI/2); c.globalAlpha = 0.7; c.fillStyle = '#FF9BA6'; c.strokeStyle = '#3A0A10'; c.lineWidth = 2*S; c.beginPath(); c.moveTo(0, -26*S); c.lineTo(6*S, 10*S); c.lineTo(0, 16*S); c.lineTo(-6*S, 10*S); c.closePath(); c.fill(); c.stroke(); c.restore(); } }
+    c.restore();
+    if (U.t < U.open + 0.8){ c.save(); c.strokeStyle = b === 'aeth' ? '#E6F6FF' : '#FF3B55'; c.lineWidth = 6*S; c.globalAlpha = 0.8; circle(c, cx, cy, R); c.stroke(); c.restore(); } }
+    // Crimson Dominion: the war-citadel rises behind the arena's top edge
+    if (b === 'mal'){ const rise = Math.min(1, Math.max(0, (U.t - 0.4)/1.2)), bx = W/2, by = H*0.02 + (1 - rise)*H*0.25;
+      c.save(); c.globalAlpha = rise*out; c.translate(bx, by); c.fillStyle = '#120304'; c.strokeStyle = '#000'; c.lineWidth = 4*S;
+      c.beginPath(); c.moveTo(-200*S, 150*S); c.lineTo(-200*S, 30*S); c.lineTo(-150*S, 30*S); c.lineTo(-150*S, -20*S); c.lineTo(-110*S, -20*S); c.lineTo(-110*S, 30*S); c.lineTo(-60*S, 30*S); c.lineTo(-40*S, -60*S); c.lineTo(0, -110*S); c.lineTo(40*S, -60*S); c.lineTo(60*S, 30*S); c.lineTo(110*S, 30*S); c.lineTo(110*S, -20*S); c.lineTo(150*S, -20*S); c.lineTo(150*S, 30*S); c.lineTo(200*S, 30*S); c.lineTo(200*S, 150*S); c.closePath(); c.fill(); c.stroke();
+      c.fillStyle = `rgba(255,${Math.round(70 + 40*Math.sin(now*6))},40,.9)`; c.beginPath(); c.moveTo(-34*S, 150*S); c.lineTo(-34*S, 70*S); c.quadraticCurveTo(0, 30*S, 34*S, 70*S); c.lineTo(34*S, 150*S); c.closePath(); c.fill();
+      for (const sx of [-130, 130]){ c.fillStyle = '#E0283C'; c.beginPath(); c.moveTo(sx*S - 12*S, 40*S); c.lineTo(sx*S + 12*S, 40*S); c.lineTo(sx*S + 12*S, 100*S + Math.sin(now*3 + sx)*3*S); c.lineTo(sx*S, 90*S); c.lineTo(sx*S - 12*S, 100*S); c.closePath(); c.fill(); }
+      c.restore(); }
+  }
+  const boss = enemies.find(e => e.wb && !e.dead);
+  if (boss) for (const a of enemies){ if (a.dead || !(a.wbAnchor || a.wbBanner)) continue;
+    c.save(); c.strokeStyle = a.wbAnchor ? 'rgba(63,224,208,.6)' : 'rgba(255,90,31,.55)'; c.lineWidth = 3*S; c.setLineDash([10*S, 8*S]); c.lineDashOffset = -now*40; c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(boss.x, boss.y); c.stroke(); c.restore(); }
+  if (boss && run.wbWardOn && boss.wb === 'aeth'){ c.save(); const R = boss.r*2.7; c.strokeStyle = 'rgba(230,255,251,.45)'; c.lineWidth = 2*S; for (let i=0;i<3;i++){ c.globalAlpha = 0.5 - i*0.14; circle(c, boss.x, boss.y, R*(0.86 + 0.07*i + 0.03*Math.sin(now*3 + i))); c.stroke(); } c.restore();
+    // shots held in the barrier: a ripple around each
+    for (const bl of bullets){ if (!bl.held) continue; c.save(); c.globalAlpha = 0.6; c.strokeStyle = '#E6FFFB'; c.lineWidth = 1.5*S; circle(c, bl.x, bl.y, (6 + bl.held*18)*S); c.stroke(); c.restore(); } }
+  for (const z of zones) wbDrawZone(c, z, now);
+}
+function wbDrawZone(c, z, now){
+  if (z.kind === 'well'){
+    if (z.warn > 0){ const k = 1 - z.warn/z.wm, x = z.x1 + (z.x - z.x1)*k, y = z.y1 + (z.y - z.y1)*k;
+      c.save(); c.setLineDash([8*S, 6*S]); c.strokeStyle = 'rgba(63,224,208,.85)'; c.lineWidth = 3; circle(c, z.x, z.y, z.r); c.stroke(); c.setLineDash([]); c.restore(); wbOrb(c, x, y, 14*S*(0.6 + 0.4*k), 'pull', now); return; }
+    const k = Math.min(1, z.life*2), shrink = z.life < 0.5 ? 1 - z.life/0.5 : 0;
+    c.save(); const g = c.createRadialGradient(z.x, z.y, 0, z.x, z.y, z.r); g.addColorStop(0, `rgba(4,10,30,${0.8*k})`); g.addColorStop(0.35, `rgba(40,150,200,${0.3*k})`); g.addColorStop(1, 'rgba(40,150,200,0)'); c.fillStyle = g; circle(c, z.x, z.y, z.r); c.fill();
+    c.strokeStyle = `rgba(200,255,250,${0.75*k})`; c.lineWidth = 2*S; for (let i=0;i<3;i++){ const q = (now*0.9 + i/3) % 1; c.globalAlpha = q*k; circle(c, z.x, z.y, z.r*(1 - q)); c.stroke(); } c.globalAlpha = 1;
+    for (let i=0;i<14;i++){ const q = (now*0.8 + i/14) % 1, a = i*2.4 + now*3*(1 + q), d = z.r*(1 - q); c.fillStyle = i % 3 ? '#9BF6FF' : '#5A6275'; c.globalAlpha = q; c.fillRect(z.x + Math.cos(a)*d - 2*S, z.y + Math.sin(a)*d - 2*S - q*6*S, 4*S, 4*S); } c.globalAlpha = 1;
+    c.strokeStyle = '#FF5FA8'; c.setLineDash([6*S, 5*S]); c.lineWidth = 2.5*S; circle(c, z.x, z.y, z.core); c.stroke(); c.setLineDash([]); c.restore();
+    wbOrb(c, z.x, z.y, 16*S*(1 - shrink*0.6), 'pull', now);
+  } else if (z.kind === 'push'){
+    if (z.warn > 0){ const k = 1 - z.warn/z.wm; c.save(); c.globalAlpha = 0.15 + 0.2*k; c.fillStyle = '#FFD27A'; circle(c, z.x, z.y, z.r); c.fill(); c.globalAlpha = 0.9; c.setLineDash([10*S, 7*S]); c.strokeStyle = '#FFB03D'; c.lineWidth = 3*S; circle(c, z.x, z.y, z.r); c.stroke(); c.setLineDash([]);
+      c.globalAlpha = 0.8; c.strokeStyle = '#FFF1C8'; c.lineWidth = 2*S; circle(c, z.x, z.y, z.r*k); c.stroke(); c.restore(); return; }
+    const k = 1 - z.life/z.lm, R = z.r*k; c.save(); c.globalAlpha = 1 - k; c.strokeStyle = '#FFE07A'; c.lineWidth = 14*S*(1 - k*0.6); circle(c, z.x, z.y, R); c.stroke(); c.strokeStyle = '#FFFFFF'; c.lineWidth = 4*S; c.stroke(); c.restore();
+  } else if (z.kind === 'conv'){
+    const dx = Math.cos(z.ang), dy = Math.sin(z.ang), ex = z.x + dx*z.len, ey = z.y + dy*z.len, nx = -dy, ny = dx;
+    if (z.warn > 0){ const T = z.wm - z.warn; c.save();
+      if (T > 0.3){ const k = Math.min(1, (T - 0.3)/0.6); c.globalAlpha = 0.12 + 0.18*k; c.fillStyle = '#B98CFF'; c.beginPath(); c.moveTo(z.x + nx*z.w/2, z.y + ny*z.w/2); c.lineTo(ex + nx*z.w/2, ey + ny*z.w/2); c.lineTo(ex - nx*z.w/2, ey - ny*z.w/2); c.lineTo(z.x - nx*z.w/2, z.y - ny*z.w/2); c.closePath(); c.fill();
+        c.globalAlpha = 0.85; c.setLineDash([14*S, 9*S]); c.lineDashOffset = -now*80; c.strokeStyle = '#E6DCFF'; c.lineWidth = 3*S; c.stroke(); c.setLineDash([]);
+        c.globalAlpha = 0.5; c.strokeStyle = '#FF5FA8'; c.setLineDash([6*S, 6*S]); circle(c, ex, ey, z.br); c.stroke(); c.setLineDash([]); }
+      c.restore();
+      // the two orbs: form at the hands (0-0.5 s), orbit closer (0.5-1.15 s), collide (1.15 s), the core grows (to 1.55 s)
+      const boss = z.follow, hx = boss && boss._hands ? boss._hands : null, br = boss ? boss.r : 70*S, cx0 = z.x + dx*br*0.9, cy0 = z.y + dy*br*0.9 - br*0.6;
+      if (T < 1.15){ const f = Math.min(1, T/0.5), orbit = Math.max(0, (T - 0.5)/0.65), sep = br*1.1*(1 - orbit*orbit), sp = T*6 + orbit*orbit*16;
+        const lA = hx && hx[-1] ? hx[-1] : {x:cx0 - br, y:cy0}, rA = hx && hx[1] ? hx[1] : {x:cx0 + br, y:cy0};
+        const pa = orbit > 0 ? {x:cx0 + Math.cos(sp)*sep, y:cy0 + Math.sin(sp)*sep*0.6} : rA, pb = orbit > 0 ? {x:cx0 - Math.cos(sp)*sep, y:cy0 - Math.sin(sp)*sep*0.6} : lA;
+        if (orbit > 0){ c.save(); c.globalAlpha = 0.5; c.lineWidth = 4*S; c.strokeStyle = '#3FE0D0'; c.beginPath(); for (let i=0;i<12;i++){ const s2 = sp - i*0.12, x = cx0 + Math.cos(s2)*sep, y = cy0 + Math.sin(s2)*sep*0.6; i ? c.lineTo(x, y) : c.moveTo(x, y); } c.stroke();
+          c.strokeStyle = '#FFD27A'; c.beginPath(); for (let i=0;i<12;i++){ const s2 = sp - i*0.12, x = cx0 - Math.cos(s2)*sep, y = cy0 - Math.sin(s2)*sep*0.6; i ? c.lineTo(x, y) : c.moveTo(x, y); } c.stroke(); c.restore(); }
+        wbOrb(c, pa.x, pa.y, 13*S*f, 'pull', now);
+        if (T > 0.15) wbOrb(c, pb.x, pb.y, 13*S*Math.min(1, (T - 0.15)/0.35), 'push', now);
+      } else { const g2 = Math.min(1, (T - 1.15)/0.4); if (T < 1.25){ c.save(); c.globalAlpha = 1 - (T - 1.15)/0.1; c.fillStyle = '#FFFFFF'; circle(c, cx0, cy0, br*1.6); c.fill(); c.restore(); }
+        wbOrb(c, cx0, cy0, (10 + 22*g2)*S, 'conv', now); }
+      return; }
+    const k = 1 - z.life/z.lm, hx2 = z.x + dx*z.len*k, hy2 = z.y + dy*z.len*k;
+    c.save(); c.lineCap = 'round'; c.globalAlpha = 0.5; c.strokeStyle = '#7B5CFF'; c.lineWidth = z.w*0.9; c.beginPath(); c.moveTo(z.x, z.y); c.lineTo(hx2, hy2); c.stroke();
+    c.globalAlpha = 0.85; c.strokeStyle = '#E6DCFF'; c.lineWidth = z.w*0.35; c.stroke(); c.restore();
+    wbOrb(c, hx2, hy2, 34*S, 'conv', now);
+    if (z.life < 0.1){ c.save(); c.globalAlpha = 0.6; c.fillStyle = '#E6DCFF'; circle(c, ex, ey, z.br); c.fill(); c.restore(); }
+  } else if (z.kind === 'rend'){
+    const ca = Math.cos(z.ang), sa = Math.sin(z.ang);
+    if (z.warn > 0){ c.save(); c.globalAlpha = 0.35 + 0.3*(1 - z.warn/z.wm); c.strokeStyle = '#FF3B55'; c.lineWidth = 1.5*S; c.setLineDash([3*S, 9*S]); c.beginPath(); c.moveTo(z.x, z.y); c.lineTo(z.x + ca*z.len, z.y + sa*z.len); c.stroke(); c.setLineDash([]); c.restore(); return; }
+    const along = (z.lm - z.life)*z.spd, cx = z.x + ca*along, cy = z.y + sa*along, nx = -sa, ny = ca, h = z.w/2;
+    c.save(); c.translate(cx, cy);
+    c.globalAlpha = 0.25; c.strokeStyle = '#FFFFFF'; c.lineWidth = 5*S; c.beginPath(); c.moveTo(nx*h, ny*h); c.quadraticCurveTo(ca*14*S, sa*14*S, -nx*h, -ny*h); c.stroke();
+    c.globalAlpha = 0.9; c.strokeStyle = '#FF3B55'; c.lineWidth = 1.6*S; c.stroke();
+    c.globalAlpha = 0.25; c.strokeStyle = '#FF9BA6'; c.lineWidth = 1*S; c.beginPath(); c.moveTo(nx*h - ca*30*S, ny*h - sa*30*S); c.quadraticCurveTo(-ca*16*S, -sa*16*S, -nx*h - ca*30*S, -ny*h - sa*30*S); c.stroke();
+    c.restore();
+  } else if (z.kind === 'sweep'){
+    const span = z.axis === 'x' ? W : H, other = z.axis === 'x' ? H : W;
+    const at = (cpos, fn) => { const n = Math.ceil(other/(34*S)); for (let i=0;i<=n;i++){ const o = i*other/n; if (Math.abs(o - z.gap) < z.gw/2) continue; fn(z.axis === 'x' ? cpos : o, z.axis === 'x' ? o : cpos); } };
+    const ang = z.axis === 'x' ? (z.from ? Math.PI : 0) : (z.from ? -Math.PI/2 : Math.PI/2);
+    if (z.warn > 0){ if (z.warn > 1.2) return; const k = 1 - Math.min(1, z.warn/1.2), c0 = z.from ? span - 10*S : 10*S;
+      c.save(); c.globalAlpha = 0.25 + 0.4*k; c.strokeStyle = '#FF3B55'; c.lineWidth = 2*S; c.setLineDash([8*S, 8*S]);
+      c.beginPath(); if (z.axis === 'x'){ c.moveTo(c0, 0); c.lineTo(c0, z.gap - z.gw/2); c.moveTo(c0, z.gap + z.gw/2); c.lineTo(c0, H); } else { c.moveTo(0, c0); c.lineTo(z.gap - z.gw/2, c0); c.moveTo(z.gap + z.gw/2, c0); c.lineTo(W, c0); } c.stroke(); c.setLineDash([]);
+      c.globalAlpha = 0.18 + 0.12*k; c.fillStyle = '#7BD94F'; if (z.axis === 'x') c.fillRect(0, z.gap - z.gw/2, W, z.gw); else c.fillRect(z.gap - z.gw/2, 0, z.gw, H);
+      c.globalAlpha = 0.6*k; at(c0, (x, y) => wbBlade(c, x, y, ang, 0.8, z.big));
+      c.restore(); return; }
+    const k = 1 - z.life/z.lm, cpos = z.from ? span*(1 - k) : span*k;
+    c.save(); c.globalAlpha = 0.95; at(cpos, (x, y) => wbBlade(c, x, y, ang, 1, z.big)); c.restore();
+  } else if (z.kind === 'fireball' && z.warn > 0){
+    const k = 1 - z.warn/z.wm, x = z.x1 + (z.x - z.x1)*k, y = z.y1 + (z.y - z.y1)*k - Math.sin(k*Math.PI)*60*S;
+    c.save(); for (let i=0;i<6;i++){ const q = i/6, kk = Math.max(0, k - q*0.18), tx = z.x1 + (z.x - z.x1)*kk, ty = z.y1 + (z.y - z.y1)*kk - Math.sin(kk*Math.PI)*60*S; c.globalAlpha = (1 - q)*0.5; c.fillStyle = i % 2 ? '#FF8A3A' : '#2A0A0A'; circle(c, tx, ty, z.r*(1 - q*0.5)); c.fill(); }
+    c.globalAlpha = 1; c.fillStyle = '#2A0A0A'; circle(c, x, y, z.r*1.15); c.fill(); c.fillStyle = '#E0283C'; circle(c, x, y, z.r*0.95); c.fill(); c.fillStyle = '#FF8A3A'; circle(c, x - z.r*0.15, y - z.r*0.15, z.r*0.6); c.fill(); c.fillStyle = '#FFE07A'; circle(c, x - z.r*0.2, y - z.r*0.2, z.r*0.28); c.fill(); c.restore();
+  } else if (z.kind === 'wcell'){
+    if (z.warn > 0){ if (z.warn > 1.4) return; const ramp = 1 - Math.min(1, z.warn/1.3);
+      c.save(); c.globalAlpha = 0.12 + 0.3*ramp; c.fillStyle = z.ult === 1 ? '#7B5CFF' : '#E0283C'; c.fillRect(z.x - z.w/2, z.y - z.w/2, z.w, z.w);
+      c.globalAlpha = 0.5 + 0.4*ramp; c.strokeStyle = z.ult === 1 ? '#E6E0FF' : '#FFB03D'; c.lineWidth = 2*S; c.strokeRect(z.x - z.w/2 + 2, z.y - z.w/2 + 2, z.w - 4, z.w - 4);
+      if (z.ult === 1){ c.fillStyle = '#FFE07A'; star(c, z.x, z.y - (1 - ramp)*120*S, 7*S*(0.6 + ramp), 4); c.fill(); }
+      else wbBlade(c, z.x, z.y - (1 - ramp)*140*S - 10*S, Math.PI/2, 0.7);
+      c.restore(); }
+    else if (z.life > 0){ c.save(); c.globalAlpha = Math.max(0, z.life/0.3)*0.8; c.fillStyle = z.ult === 1 ? '#E6E0FF' : '#FF8A3A'; c.fillRect(z.x - z.w/2, z.y - z.w/2, z.w, z.w); c.restore(); }
+  }
+}
+// orbs: pull (teal, dark core, inward motes), push (gold, pulsing, outward sparks), conv (the white-violet core)
+function wbOrb(c, x, y, r, kind, now){
+  if (!(r > 0.5)) return; c.save();
+  const col = kind === 'pull' ? ['#04101E', '#3FE0D0', '#E6FFFB'] : kind === 'push' ? ['#FFF1C8', '#FFB03D', '#FFE07A'] : ['#FFFFFF', '#B98CFF', '#F2EEFF'];
+  const g = c.createRadialGradient(x, y, 0, x, y, r*2.4); g.addColorStop(0, kind === 'pull' ? 'rgba(63,224,208,.5)' : kind === 'push' ? 'rgba(255,176,61,.5)' : 'rgba(185,140,255,.55)'); g.addColorStop(1, 'rgba(0,0,0,0)'); c.fillStyle = g; circle(c, x, y, r*2.4); c.fill();
+  const pr = kind === 'push' ? r*(1 + 0.12*Math.sin(now*24)) : r;
+  c.fillStyle = col[1]; circle(c, x, y, pr); c.fill(); c.fillStyle = col[0]; circle(c, x, y, pr*0.55); c.fill();
+  c.strokeStyle = col[2]; c.lineWidth = Math.max(1, r*0.14); for (let i=0;i<2;i++){ c.beginPath(); c.ellipse(x, y, pr*1.35, pr*0.5, now*(kind === 'pull' ? 3 : -3) + i*1.6, 0, TAU); c.stroke(); }
+  if (kind === 'conv'){ c.strokeStyle = 'rgba(230,220,255,.8)'; c.lineWidth = Math.max(1, r*0.08); for (let i=0;i<4;i++){ const a = now*7 + i*1.7; c.beginPath(); c.moveTo(x + Math.cos(a)*r*0.9, y + Math.sin(a)*r*0.9); c.lineTo(x + Math.cos(a + 0.4)*r*1.6, y + Math.sin(a + 0.4)*r*1.6); c.lineTo(x + Math.cos(a + 0.2)*r*2.1, y + Math.sin(a + 0.2)*r*2.1); c.stroke(); } }
+  for (let i=0;i<6;i++){ const q = ((now*1.4 + i/6) % 1), a = i*1.05 + now*2, d = kind === 'push' ? r*(1 + q*1.4) : r*(2.4 - q*1.4); c.globalAlpha = kind === 'push' ? 1 - q : q; c.fillStyle = col[2]; c.fillRect(x + Math.cos(a)*d - 1.5, y + Math.sin(a)*d - 1.5, 3, 3); }
+  c.restore();
+}
+function wbBlade(c, x, y, ang, a=1, big){ const s = big ? 1.5 : 1; c.save(); c.translate(x, y); c.rotate(ang); c.globalAlpha *= a; c.fillStyle = '#FFD6DC'; c.strokeStyle = '#4A0810'; c.lineWidth = 2*S;
+  c.beginPath(); c.moveTo(20*S*s, 0); c.lineTo(-6*S*s, -6*S*s); c.lineTo(-14*S*s, 0); c.lineTo(-6*S*s, 6*S*s); c.closePath(); c.fill(); c.stroke(); c.strokeStyle = '#FF3B55'; c.lineWidth = 1.2*S; c.beginPath(); c.moveTo(16*S*s, 0); c.lineTo(-8*S*s, 0); c.stroke(); c.restore(); }
+
+// ---------- drawing: the bosses (humanoid figures with poses), anchors and banners ----------
+{ const _dm = drawMob; drawMob = function(c, e, now, look){
+    if (e.wb) return wbDrawBoss(c, e, now);
+    if (e.wbAnchor) return wbDrawAnchor(c, e, now);
+    if (e.wbBanner) return wbDrawBanner(c, e, now);
+    return _dm.apply(this, arguments); }; }
+function wbHpBar(c, e, y){ const w = e.r*1.9, h = 5*S; c.fillStyle = C.line; rrect(c, e.x - w/2 - 2, y - 2, w + 4, h + 4, (h + 4)/2); c.fill(); c.fillStyle = e.wbAnchor ? '#3FE0D0' : '#FF8A3A'; const fw = w*Math.max(0, e.hp/e.max); if (fw > 1){ rrect(c, e.x - w/2, y, fw, h, h/2); c.fill(); } }
+function wbDrawAnchor(c, e, now){
+  if (e.hidden > 0) return; const r = e.r, bob = Math.sin(now*2 + e.wob)*3*S;
+  c.save(); c.translate(e.x, e.y); artContact(c, 0, r*0.9, r*0.8, r*0.25);
+  const g = c.createRadialGradient(0, bob - r*0.3, 0, 0, bob - r*0.3, r*2); g.addColorStop(0, 'rgba(63,224,208,.45)'); g.addColorStop(1, 'rgba(63,224,208,0)'); c.fillStyle = g; circle(c, 0, bob - r*0.3, r*2); c.fill();
+  c.fillStyle = e.flash > 0 ? '#FFFFFF' : '#1C1550'; c.strokeStyle = C.line; c.lineWidth = 3*S;
+  c.beginPath(); c.moveTo(0, bob - r*1.4); c.lineTo(r*0.55, bob - r*0.2); c.lineTo(0, bob + r*0.8); c.lineTo(-r*0.55, bob - r*0.2); c.closePath(); c.fill(); c.stroke();
+  c.fillStyle = '#3FE0D0'; c.beginPath(); c.moveTo(0, bob - r*1.1); c.lineTo(r*0.25, bob - r*0.25); c.lineTo(0, bob + r*0.45); c.lineTo(-r*0.25, bob - r*0.25); c.closePath(); c.fill();
+  c.fillStyle = '#FFE07A'; star(c, 0, bob - r*0.3, r*0.18, 4, now); c.fill();
+  c.restore(); wbHpBar(c, e, e.y - e.r*1.7);
+}
+function wbDrawBanner(c, e, now){
+  if (e.hidden > 0) return; const r = e.r, sw = Math.sin(now*3 + e.wob);
+  c.save(); c.translate(e.x, e.y); artContact(c, 0, r*0.9, r*0.9, r*0.3);
+  c.fillStyle = '#2A1A10'; c.strokeStyle = C.line; c.lineWidth = 2.5*S; rrect(c, -r*0.5, r*0.5, r, r*0.45, 4*S); c.fill(); c.stroke();
+  c.fillStyle = '#5A3A22'; c.fillRect(-3*S, -r*2.2, 6*S, r*2.75); c.strokeRect(-3*S, -r*2.2, 6*S, r*2.75);
+  c.fillStyle = e.flash > 0 ? '#FFFFFF' : '#8A0E1E'; c.beginPath(); c.moveTo(3*S, -r*2.1); c.lineTo(r*1.3 + sw*3*S, -r*1.95); c.lineTo(r*1.0, -r*1.45); c.lineTo(r*1.3 + sw*4*S, -r*0.95); c.lineTo(3*S, -r*0.95); c.closePath(); c.fill(); c.stroke();
+  c.fillStyle = '#FFB03D'; star(c, r*0.6, -r*1.52, r*0.22, 5); c.fill();
+  c.fillStyle = '#FF8A3A'; c.globalAlpha = 0.6 + 0.3*Math.sin(now*9 + e.wob); circle(c, 0, -r*2.3, 5*S); c.fill(); c.globalAlpha = 1;
+  c.restore(); wbHpBar(c, e, e.y - e.r*2.7);
+}
+// arm angles for a pose: 0 = hanging, PI/2 = straight out in front, PI = straight up
+function wbArms(e, now){
+  const p = e.pose || {k:'idle', t:0}, t = p.t, ease = x => x < 0 ? 0 : x > 1 ? 1 : x*x*(3 - 2*x), sway = Math.sin(now*1.6 + e.wob)*0.08;
+  let L = 0.25 + sway, R = 0.25 - sway, lean = 0, reach = 0;
+  const k = ease(t/0.25);
+  if (p.k === 'raiseR'){ R = 0.25 + (2.6 - 0.25)*k; }
+  else if (p.k === 'raiseL'){ L = 0.25 + (2.6 - 0.25)*k; }
+  else if (p.k === 'both'){ L = R = 0.25 + (1.9 - 0.25)*k; }
+  else if (p.k === 'push'){ R = 0.25 + (1.55 - 0.25)*k; lean = 0.08*k; reach = k; }
+  else if (p.k === 'gesture'){ L = R = 0.25 + (2.2 - 0.25)*k; lean = -0.05*k; }
+  else if (p.k === 'converge'){ L = R = 0.25 + (1.75 - 0.25)*ease(t/0.3); if (t > 1.15){ const q = ease((t - 1.15)/0.25); R = 1.75 + (1.6 - 1.75)*q; L = 1.75 - 1.0*q; reach = q; lean = 0.1*q; } }
+  else if (p.k === 'swipe' || p.k === 'swipeL'){ const q = ease(t/0.12), q2 = ease((t - 0.12)/0.12); const v = 2.5*q - 2.2*q2; if (p.k === 'swipe') R = 0.3 + v; else L = 0.3 + v; lean = 0.1*q2; }
+  return {L, R, lean, reach};
+}
+function wbDrawBoss(c, e, now){
+  if (e.hidden > 0) return;
+  const B = wbB(e), r = e.r;
+  // facing: toward the player while casting, otherwise the way it is moving (smoothed, so it never flickers)
+  const mv = e.x - (e._lx ?? e.x); e._lx = e.x; e._mv = (e._mv || 0)*0.85 + mv*0.15;
+  if (Math.abs(e._mv) > 0.25*S) e._face = e._mv > 0 ? 1 : -1; else if (e.pose && e.pose.k !== 'idle') e._face = P.x >= e.x ? 1 : -1; const f = e._face || 1;
+  let hy = 0; if (e.intro > 0){ const k = e.intro/e.introMax; hy -= k*k*H*0.55; }
+  const moving = Math.abs(e._mv) > 0.12*S, step = now*7 + e.wob;
+  c.save(); c.translate(e.x, e.y);
+  artContact(c, 0, r*1.0, r*0.9*(e.intro > 0 ? 0.5 : 1), r*0.3);
+  c.translate(0, hy);
+  if (e.casting > 0 || e.phaseLock > 0){ const k = Math.max(e.casting || 0, e.phaseLock || 0); c.save(); c.globalAlpha = Math.min(1, k)*0.55; c.strokeStyle = B.col; c.lineWidth = 4*S; for (let i=0;i<2;i++){ circle(c, 0, -r*0.4, r*(1.5 + ((now*1.6 + i/2) % 1)*1.2)); c.stroke(); } c.restore(); }
+  const arms = wbArms(e, now);
+  if (e.wb === 'aeth') wbDrawAeth(c, e, r, now, f, arms, moving); else wbDrawMal(c, e, r, now, f, arms, moving, step);
+  c.restore();
+  // world positions of the hands (for the orbs and the fire)
+  e._hands = {}; for (const s of [-1, 1]){ const h = e._handsL && e._handsL[s]; if (h) e._hands[s] = {x:e.x + h.x*f, y:e.y + hy + h.y}; }
+  const pk = e.pose ? e.pose.k : 'idle', pt = e.pose ? e.pose.t : 0, hR = e._hands[1], hL = e._hands[-1];
+  if (e.wb === 'aeth' && hR && hL){ if (pk === 'raiseR') wbOrb(c, hR.x, hR.y, 11*S*Math.min(1, pt/0.5), 'pull', now); if (pk === 'push') wbOrb(c, hR.x, hR.y, 12*S*Math.min(1, pt/0.4), 'push', now);
+    if (pk === 'gesture' || pk === 'both'){ c.save(); c.globalAlpha = 0.6; c.fillStyle = '#3FE0D0'; circle(c, hL.x, hL.y, 6*S); c.fill(); circle(c, hR.x, hR.y, 6*S); c.fill(); c.restore(); } }
+  if (e.wb === 'mal' && hR){ if (pk === 'raiseR'){ const q = Math.min(1, pt/0.7); c.save(); for (let i=0;i<5;i++){ const a = now*9 + i*1.3, d = (1 - ((now*2 + i/5) % 1))*22*S*q; c.globalAlpha = 0.7*q; c.fillStyle = i % 2 ? '#FF8A3A' : '#2A0A0A'; circle(c, hR.x + Math.cos(a)*d, hR.y + Math.sin(a)*d, 6*S*q); c.fill(); } c.fillStyle = '#E0283C'; circle(c, hR.x, hR.y, 10*S*q); c.fill(); c.fillStyle = '#FFE07A'; circle(c, hR.x, hR.y, 4*S*q); c.fill(); c.restore(); }
+    if (pk === 'swipe' || pk === 'swipeL'){ if (pt < 0.3){ c.save(); c.globalAlpha = 1 - pt/0.3; c.strokeStyle = '#FF3B55'; c.lineWidth = 3*S; c.beginPath(); c.arc(e.x, e.y - r*0.7, r*1.25, -Math.PI*0.9, -Math.PI*0.1); c.stroke(); c.restore(); } } }
+  if (e.atkCharge > 0){ c.save(); c.strokeStyle = `rgba(255,59,85,${0.35 + 0.5*e.atkCharge})`; c.lineWidth = 3*S; c.setLineDash([8, 6]); c.lineDashOffset = -now*60; c.beginPath(); c.ellipse(e.x, e.y + r*0.95, r*(0.9 + 0.2*(1 - e.atkCharge)), r*0.3, 0, 0, TAU); c.stroke(); c.restore(); }
+}
+// a limb from the shoulder (sx, sy) with angle a (0 = down) and length L, drawn as an outlined stroke; returns the hand
+function wbLimb(c, sx, sy, a, L, w, col){ const mx = sx + Math.sin(a)*L*0.5, my = sy + Math.cos(a)*L*0.5 + w*0.15, ex = sx + Math.sin(a)*L, ey = sy + Math.cos(a)*L;
+  c.lineCap = 'round'; c.strokeStyle = C.line; c.lineWidth = w + 4*S; c.beginPath(); c.moveTo(sx, sy); c.quadraticCurveTo(mx, my, ex, ey); c.stroke();
+  c.strokeStyle = col; c.lineWidth = w; c.stroke(); return {x:ex, y:ey}; }
+// Aetherion: tall and slim; he glides with a gentle hover instead of walking.
+function wbDrawAeth(c, e, r, now, f, A, moving){
+  const fl = e.flash > 0, ph = e.phase || 1, hov = Math.sin(now*2.2 + e.wob)*r*0.06 - r*0.1, br = 1 + Math.sin(now*1.8)*0.015;
+  c.save(); c.scale(f, 1); c.translate(0, hov); c.rotate(A.lean);
+  const shY = -r*1.05, shX = r*0.42, headY = -r*1.55;
+  if (moving && SET.particles !== 'low' && Math.random() < 0.5) parts.push({x:e.x - f*r*0.4 + rnd(-8,8)*S, y:e.y + r*0.6, vx:-f*rnd(10,40)*S, vy:rnd(-20,5)*S, life:0.6, max:0.6, r:rnd(1.5,3)*S, col:Math.random() < 0.5 ? '#B9A8FF' : '#3FE0D0'});
+  // nebula cape behind (streams back while gliding)
+  { const w = Math.sin(now*1.6)*r*0.1 + (moving ? -r*0.25 : 0); const g = c.createLinearGradient(0, shY, 0, r*1.0); g.addColorStop(0, '#3B2385'); g.addColorStop(0.6, '#6A2F98'); g.addColorStop(1, '#1A6E7A'); c.fillStyle = g; c.strokeStyle = C.line; c.lineWidth = 3*S;
+    c.beginPath(); c.moveTo(-shX*0.9, shY); c.quadraticCurveTo(-r*1.05 + w, r*0.2, -r*0.85 + w, r*1.0); c.lineTo(r*0.85 + w, r*1.0); c.quadraticCurveTo(r*1.05 + w, r*0.2, shX*0.9, shY); c.closePath(); c.fill(); c.stroke();
+    c.fillStyle = 'rgba(255,255,255,.8)'; for (let i=0;i<9;i++) c.fillRect(-r*0.7 + (i*0.17)*r + w*0.5, r*((i*0.37) % 1)*0.9, 2*S, 2*S); }
+  const hL = wbLimb(c, -shX, shY + r*0.08, -A.L, r*0.9, r*0.2, '#241C5C');
+  // long coat, floating just above the ground
+  c.fillStyle = fl ? '#FFFFFF' : '#1E1660'; c.strokeStyle = C.line; c.lineWidth = 4*S;
+  c.beginPath(); c.moveTo(-shX, shY); c.quadraticCurveTo(-r*0.5, -r*0.2, -r*0.62*br, r*0.85); c.quadraticCurveTo(0, r*0.98, r*0.62*br, r*0.85); c.quadraticCurveTo(r*0.5, -r*0.2, shX, shY); c.quadraticCurveTo(0, shY - r*0.1, -shX, shY); c.closePath(); c.fill(); c.stroke();
+  c.save(); c.beginPath(); c.moveTo(-r*0.16, shY + r*0.15); c.lineTo(r*0.16, shY + r*0.15); c.lineTo(r*0.3, r*0.82); c.lineTo(-r*0.3, r*0.82); c.closePath(); c.clip(); c.fillStyle = '#0B0826'; c.fillRect(-r*0.4, shY, r*0.8, r*2);
+  for (let i=0;i<12;i++){ c.fillStyle = i % 4 ? '#E6E0FF' : '#FFE07A'; c.globalAlpha = 0.4 + 0.6*Math.abs(Math.sin(now*1.5 + i)); c.fillRect(Math.sin(i*2.1)*r*0.2, shY + r*0.2 + ((i*0.13) % 1)*r*1.55, 2*S, 2*S); } c.restore();
+  c.strokeStyle = B_GOLD; c.lineWidth = 2.5*S; c.beginPath(); c.moveTo(-r*0.16, shY + r*0.15); c.lineTo(-r*0.3, r*0.82); c.moveTo(r*0.16, shY + r*0.15); c.lineTo(r*0.3, r*0.82); c.moveTo(-r*0.62, r*0.8); c.quadraticCurveTo(0, r*0.93, r*0.62, r*0.8); c.stroke();
+  c.fillStyle = '#120D3A'; c.fillRect(-r*0.42, -r*0.15, r*0.84, r*0.12); c.fillStyle = B_GOLD; star(c, 0, -r*0.09, r*0.1, 4); c.fill();
+  // high flaring collar, starfield-lined
+  c.fillStyle = '#2B2370'; c.strokeStyle = C.line; c.lineWidth = 3*S; for (const s of [-1, 1]){ c.beginPath(); c.moveTo(s*r*0.12, shY - r*0.05); c.lineTo(s*r*0.42, shY - r*0.38); c.lineTo(s*r*0.36, shY + r*0.08); c.closePath(); c.fill(); c.stroke(); }
+  for (const s of [-1, 1]){ c.fillStyle = '#2B2370'; c.strokeStyle = C.line; c.lineWidth = 3*S; c.beginPath(); c.ellipse(s*shX, shY + r*0.04, r*0.2, r*0.13, s*0.3, 0, TAU); c.fill(); c.stroke(); c.strokeStyle = B_GOLD; c.lineWidth = 2*S; c.beginPath(); c.ellipse(s*shX, shY + r*0.04, r*0.13, r*0.08, s*0.3, Math.PI, TAU); c.stroke(); }
+  // helm: the face is a window into a starfield (no eyes); a teal rim lights up when he casts
+  c.fillStyle = '#1A1450'; c.strokeStyle = C.line; c.lineWidth = 3*S; c.beginPath(); c.ellipse(0, headY, r*0.32, r*0.36, 0, 0, TAU); c.fill(); c.stroke();
+  c.save(); c.beginPath(); c.ellipse(r*0.04, headY + r*0.04, r*0.21, r*0.24, 0, 0, TAU); c.clip(); const vg = c.createRadialGradient(r*0.05, headY, 0, r*0.05, headY, r*0.25); vg.addColorStop(0, '#3B2385'); vg.addColorStop(1, '#05030F'); c.fillStyle = vg; c.fillRect(-r*0.3, headY - r*0.3, r*0.6, r*0.6);
+  c.fillStyle = '#FFFFFF'; for (let i=0;i<7;i++){ c.globalAlpha = 0.5 + 0.5*Math.sin(now*2 + i*1.7); c.fillRect(r*(-0.12 + ((i*0.37) % 1)*0.3), headY + r*(-0.15 + ((i*0.61) % 1)*0.35), 2*S, 2*S); } c.restore();
+  const cast = e.pose && e.pose.k !== 'idle' ? 1 : 0.35; c.strokeStyle = `rgba(63,224,208,${cast})`; c.lineWidth = 2.5*S; c.beginPath(); c.ellipse(r*0.04, headY + r*0.04, r*0.22, r*0.25, 0, 0, TAU); c.stroke();
+  c.strokeStyle = B_GOLD; c.lineWidth = 2.5*S; c.beginPath(); c.moveTo(0, headY - r*0.36); c.lineTo(0, headY - r*0.2); c.stroke();
+  const hR = wbLimb(c, shX, shY + r*0.08, A.R, r*(0.9 + 0.12*A.reach), r*0.2, '#2B2370');
+  for (const h of [hL, hR]){ c.fillStyle = '#3FE0D0'; circle(c, h.x, h.y, r*0.09); c.fill(); c.strokeStyle = C.line; c.lineWidth = 2*S; c.stroke(); }
+  // crown: three small planets on a tilted ring
+  c.save(); c.translate(0, headY - r*0.62); c.strokeStyle = 'rgba(255,210,122,.8)'; c.lineWidth = 2*S; c.beginPath(); c.ellipse(0, 0, r*0.55, r*0.14, 0, 0, TAU); c.stroke();
+  for (let i=0;i<3;i++){ const a = now*(0.9 + i*0.2) + i*TAU/3, x = Math.cos(a)*r*0.55, y = Math.sin(a)*r*0.14, pc = ['#FF5FA8', '#3FE0D0', '#FFD27A'][i], pr = r*(0.07 + i*0.018); c.fillStyle = pc; c.strokeStyle = C.line; c.lineWidth = 2*S; circle(c, x, y, pr); c.fill(); c.stroke(); if (Math.sin(a) < 0){ c.fillStyle = 'rgba(10,8,30,.35)'; circle(c, x, y, pr); c.fill(); } }
+  c.restore();
+  if (ph > 1){ c.save(); c.globalAlpha = 0.35; c.strokeStyle = ph === 3 ? '#3FE0D0' : '#9B7BFF'; c.lineWidth = 3*S; c.beginPath(); c.ellipse(0, -r*0.3, r*0.9, r*1.5, 0, 0, TAU); c.stroke(); c.restore(); }
+  c.restore();
+  const rot = p => { const cs = Math.cos(A.lean), sn = Math.sin(A.lean); return {x:p.x*cs - p.y*sn, y:p.x*sn + p.y*cs + hov}; };
+  e._handsL = {[-1]:rot(hL), [1]:rot(hR)};
+}
+// Malrath: broad and heavy; he stomps, with a step cycle while moving.
+function wbDrawMal(c, e, r, now, f, A, moving, step){
+  const fl = e.flash > 0, ph = e.phase || 1, heat = 0.55 + 0.45*Math.sin(now*4), bob = moving ? -Math.abs(Math.sin(step))*r*0.08 : Math.sin(now*1.4)*r*0.02;
+  c.save(); c.scale(f, 1); c.rotate(A.lean);
+  const shY = -r*0.95 + bob, shX = r*0.6, headY = -r*1.38 + bob, hipY = r*0.15 + bob;
+  for (let i=0;i<2;i++){ const a = now*(1.4 + ph*0.3) + i*Math.PI; if (Math.sin(a) > 0) continue; wbChainBlade(c, Math.cos(a)*r*1.35, Math.sin(a)*r*0.55 - r*0.3, a, r); }
+  { const g = c.createRadialGradient(0, -r*0.3, r*0.5, 0, -r*0.3, r*(1.8 + 0.15*ph)); g.addColorStop(0, `rgba(255,90,31,${0.2 + 0.1*ph})`); g.addColorStop(1, 'rgba(255,90,31,0)'); c.fillStyle = g; circle(c, 0, -r*0.3, r*(1.8 + 0.15*ph)); c.fill(); }
+  c.fillStyle = '#3A0A10'; c.strokeStyle = C.line; c.lineWidth = 3*S; c.beginPath(); c.moveTo(-shX*0.9, shY); for (let i=0;i<=6;i++){ const x = -r*0.85 + i*r*0.283, y = r*(0.75 + (i % 2 ? 0.15 : 0)) + Math.sin(now*3 + i)*r*0.04; c.lineTo(x, y); } c.lineTo(shX*0.9, shY); c.closePath(); c.fill(); c.stroke();
+  for (const s of [-1, 1]){ const lift = moving ? Math.max(0, Math.sin(step + (s > 0 ? Math.PI : 0)))*r*0.18 : 0; c.fillStyle = '#1A0608'; c.strokeStyle = C.line; c.lineWidth = 3*S;
+    rrect(c, s*r*0.3 - r*0.15, hipY, r*0.3, r*0.62 - lift, r*0.08); c.fill(); c.stroke(); c.fillStyle = '#2A0A0C'; rrect(c, s*r*0.3 - r*0.2, hipY + r*0.58 - lift, r*0.4, r*0.2, r*0.06); c.fill(); c.stroke(); }
+  const hL = wbLimb(c, -shX, shY + r*0.1, -A.L, r*0.85, r*0.3, '#2A0A0C');
+  c.fillStyle = fl ? '#FFFFFF' : '#2A0A0C'; c.strokeStyle = C.line; c.lineWidth = 4*S;
+  c.beginPath(); c.moveTo(-shX, shY); c.quadraticCurveTo(-r*0.75, -r*0.2 + bob, -r*0.48, hipY + r*0.08); c.lineTo(r*0.48, hipY + r*0.08); c.quadraticCurveTo(r*0.75, -r*0.2 + bob, shX, shY); c.quadraticCurveTo(0, shY - r*0.14, -shX, shY); c.closePath(); c.fill(); c.stroke();
+  c.strokeStyle = `rgba(255,90,31,${0.6 + 0.4*heat})`; c.lineWidth = 3*S; c.beginPath(); c.moveTo(-r*0.55, shY + r*0.2); c.lineTo(-r*0.35, shY + r*0.45); c.lineTo(-r*0.45, shY + r*0.8); c.moveTo(r*0.5, shY + r*0.15); c.lineTo(r*0.36, shY + r*0.5); c.lineTo(r*0.46, shY + r*0.85); c.stroke(); c.strokeStyle = '#FFE07A'; c.lineWidth = 1*S; c.stroke();
+  c.fillStyle = '#0A0203'; rrect(c, -r*0.24, shY + r*0.32, r*0.48, r*0.36, r*0.06); c.fill();
+  c.fillStyle = `rgba(255,${120 + (ph - 1)*40},40,${0.55 + 0.4*heat})`; rrect(c, -r*0.2, shY + r*0.36, r*0.4, r*0.28, r*0.05); c.fill();
+  c.strokeStyle = '#1A0508'; c.lineWidth = 3*S; for (let i=-1;i<=1;i++){ c.beginPath(); c.moveTo(i*r*0.1, shY + r*0.34); c.lineTo(i*r*0.1, shY + r*0.66); c.stroke(); }
+  c.fillStyle = '#5A1A1E'; c.fillRect(-r*0.5, hipY - r*0.04, r*1.0, r*0.12); c.fillStyle = '#C9C2D0'; c.fillRect(-r*0.08, hipY - r*0.05, r*0.16, r*0.14);
+  for (const s of [-1, 1]){ c.fillStyle = '#2A0A0C'; c.strokeStyle = C.line; c.lineWidth = 3*S; c.beginPath(); c.ellipse(s*shX, shY + r*0.03, r*0.3, r*0.2, s*0.3, 0, TAU); c.fill(); c.stroke();
+    c.fillStyle = '#C9C2D0'; for (let k=0;k<3;k++){ const bx = s*(shX - r*0.14 + k*r*0.13), by = shY - r*0.12 - k*r*0.02; c.beginPath(); c.moveTo(bx - r*0.05, by + r*0.04); c.lineTo(bx + s*r*0.03, by - r*0.2); c.lineTo(bx + r*0.05, by + r*0.04); c.closePath(); c.fill(); c.stroke(); } }
+  // horned helm with one visor slit
+  c.fillStyle = '#1A0608'; c.strokeStyle = C.line; c.lineWidth = 3*S; c.beginPath(); c.arc(0, headY, r*0.36, Math.PI*1.0, Math.PI*2.0); c.lineTo(r*0.34, headY + r*0.2); c.lineTo(r*0.12, headY + r*0.32); c.lineTo(-r*0.12, headY + r*0.32); c.lineTo(-r*0.34, headY + r*0.2); c.closePath(); c.fill(); c.stroke();
+  for (const s of [-1, 1]){ c.fillStyle = '#E8DCC8'; c.beginPath(); c.moveTo(s*r*0.28, headY - r*0.2); c.quadraticCurveTo(s*r*0.8, headY - r*0.3, s*r*0.72, headY - r*0.85); c.quadraticCurveTo(s*r*0.58, headY - r*0.45, s*r*0.16, headY - r*0.32); c.closePath(); c.fill(); c.stroke(); }
+  c.fillStyle = '#0A0203'; rrect(c, -r*0.26, headY - r*0.02, r*0.52, r*0.09, r*0.04); c.fill();
+  c.fillStyle = `rgba(255,${80 + ph*30},30,${0.75 + 0.25*heat})`; rrect(c, -r*0.23, headY, r*0.46, r*0.05, r*0.025); c.fill();
+  c.fillStyle = '#E0283C'; c.beginPath(); c.moveTo(-r*0.06, headY - r*0.34); c.lineTo(0, headY - r*0.6 - Math.sin(now*6)*r*0.03); c.lineTo(r*0.06, headY - r*0.34); c.closePath(); c.fill(); c.stroke();
+  const hR = wbLimb(c, shX, shY + r*0.1, A.R, r*0.85, r*0.3, '#3A0A10');
+  for (const h of [hL, hR]){ c.fillStyle = '#5A1A1E'; c.strokeStyle = C.line; c.lineWidth = 2.5*S; circle(c, h.x, h.y, r*0.15); c.fill(); c.stroke(); c.strokeStyle = `rgba(255,90,31,${heat})`; c.lineWidth = 1.5*S; circle(c, h.x, h.y, r*0.08); c.stroke(); }
+  for (let i=0;i<2;i++){ const a = now*(1.4 + ph*0.3) + i*Math.PI; if (Math.sin(a) <= 0) continue; wbChainBlade(c, Math.cos(a)*r*1.35, Math.sin(a)*r*0.55 - r*0.3, a, r); }
+  c.restore();
+  if (SET.particles !== 'low' && Math.random() < 0.3) parts.push({x:e.x + rnd(-0.6, 0.6)*r, y:e.y - r*0.9, vx:rnd(-15, 15)*S, vy:-rnd(40, 90)*S, life:0.6, max:0.6, r:rnd(2, 3.5)*S, col:Math.random() < 0.5 ? '#FF8A3A' : '#FFE07A', f:1});
+  if (moving && Math.random() < 0.08) burst(e.x + rnd(-0.4, 0.4)*r, e.y + r*0.95, '#5A2A20', 4, 0.5);
+  const rot = p => { const cs = Math.cos(A.lean), sn = Math.sin(A.lean); return {x:p.x*cs - p.y*sn, y:p.x*sn + p.y*cs}; };
+  e._handsL = {[-1]:rot(hL), [1]:rot(hR)};
+}
+function wbChainBlade(c, x, y, a, r){ c.strokeStyle = '#5A5560'; c.lineWidth = 2.5*S; c.setLineDash([4*S, 3*S]); c.beginPath(); c.moveTo(0, -r*0.6); c.lineTo(x, y); c.stroke(); c.setLineDash([]);
+  c.save(); c.translate(x, y); c.rotate(a + Math.PI/2); c.fillStyle = '#C9C2D0'; c.strokeStyle = C.line; c.lineWidth = 2*S; c.beginPath(); c.moveTo(0, -r*0.36); c.quadraticCurveTo(r*0.2, -r*0.05, 0, r*0.18); c.quadraticCurveTo(-r*0.07, 0, 0, -r*0.36); c.closePath(); c.fill(); c.stroke(); c.strokeStyle = '#E0283C'; c.lineWidth = 1.5*S; c.beginPath(); c.moveTo(0, -r*0.3); c.quadraticCurveTo(r*0.12, -r*0.05, 0, r*0.1); c.stroke(); c.restore(); }
+// intro card, letterbox during domains, phase flash, all drawn over everything
+{ const _dr = draw; draw = function(now){ const r = _dr.apply(this, arguments); try { if (run && run.wbFight && state !== 'menu') wbDrawTop(); } catch(err){ console.error(err); } return r; }; }
+function wbDrawTop(){
+  const F = run.wbFight, B = WB_BOSS[F.b], c = ctx, U = run.wbUlt;
+  const bar = k => { const h = Math.min(H*0.11, 70)*k; c.fillStyle = 'rgba(0,0,0,.85)'; c.fillRect(0, 0, W, h); c.fillRect(0, H - h, W, h); };
+  const boss = enemies.find(e => e.wb && !e.dead), intro = boss && boss.intro > 0;
+  if (boss && !intro && F.cardT == null) F.cardT = 2.4;
+  const card = intro ? 1 : F.cardT > 0 ? Math.min(1, F.cardT/0.5) : 0;
+  if (F.cardT > 0) F.cardT -= 1/60;
+  if (card > 0){ bar(card); c.save(); c.globalAlpha = card; c.textAlign = 'center'; c.fillStyle = B.col; c.font = `900 ${Math.round(Math.min(W/18, 44))}px Rubik, system-ui, sans-serif`; c.fillText(B.short.toUpperCase(), W/2, H - Math.min(H*0.11, 70)*0.42);
+    c.fillStyle = '#FFFFFF'; c.font = `800 ${Math.round(Math.min(W/45, 16))}px Rubik, system-ui, sans-serif`; c.fillText(B.title + ' · WORLD BOSS', W/2, H - Math.min(H*0.11, 70)*0.12); c.restore(); }
+  if (U){ const k = Math.min(1, U.t/0.4)*Math.min(1, (U.dur - U.t)/0.4); bar(k*0.6); }
+  if (F.flash > 0){ c.save(); c.globalAlpha = Math.min(0.35, F.flash*0.3); c.fillStyle = B.col; c.fillRect(0, 0, W, H); c.restore(); }
+}
+{ const _uh = updateHud; updateHud = function(){ const r = _uh.apply(this, arguments);
+    try { if (run && run.wbFight && !$('#hud').hidden){ const F = run.wbFight, B = WB_BOSS[F.b], e = enemies.find(x => x.wb && !x.dead);
+        const left = Math.max(0, F.dur - (run.t - F.t0));
+        setText('#objTxt', F.hint ? F.hint : e ? `World Boss · ${fmt(left)} left` : run.bossDead ? 'Victory!' : 'The portal stirs…');
+        const bb = $('#bossbar'); bb.classList.add('wbb'); bb.style.setProperty('--wbc', B.col);
+        if (e) setText('#bossName', `${B.short.toUpperCase()} · PHASE ${e.phase || 1}/3${run.wbWardOn && e.wb === 'aeth' ? ' · BARRIER' : ''}`); } else { const bb = $('#bossbar'); if (bb) bb.classList.remove('wbb'); } } catch(err){}
+    return r; }; }
+{ const s = document.createElement('style'); s.textContent = `#bossbar.wbb #bb{border-color:var(--wbc)}#bossbar.wbb #bossFill{background:linear-gradient(90deg,var(--wbc),#FFE07A)}#bossbar.wbb #bb{background-image:linear-gradient(90deg,transparent 33%,rgba(255,255,255,.55) 33%,rgba(255,255,255,.55) calc(33% + 2px),transparent calc(33% + 2px),transparent 66%,rgba(255,255,255,.55) 66%,rgba(255,255,255,.55) calc(66% + 2px),transparent calc(66% + 2px))}#bossbar.wbb #bossName{color:var(--wbc)}`; document.head.appendChild(s); }
+{ const _sp = spawnTick; spawnTick = function(dt){ const r = _sp.apply(this, arguments); if (run && run.wbFight) run.spawnT += dt*0.45; return r; }; }
+{ const T5 = JSON.parse(JSON.stringify(MTH[2])), T6 = JSON.parse(JSON.stringify(MTH[3]));
+  Object.assign(T5, {name:'Cosmic Sanctuary', root:59, sc:MSC.aeo, tempo:{village:76, explore:90, dungeon:124, boss:134}, boss:[5, 3, 6, 4, 5, 3, 1, 4]});
+  T5.inst = Object.assign({}, T5.inst, {lead:'S_celesta', bossLead:'S_french_horn', bossPad:'S_choir_aahs', boss:'S_string_ensemble_1'});
+  Object.assign(T6, {name:'Crimson Citadel', root:45, sc:MSC.phr, tempo:{village:80, explore:92, dungeon:130, boss:150}, boss:[0, 1, 0, 6, 0, 1, 5, 6]});
+  MTH[5] = T5; MTH[6] = T6; }
+{ const _w = MD.want; MD.want = function(){ const w = _w.apply(this, arguments);
+    if (w && run && run.wbFight && w.scene !== 'menu' && w.scene !== 'village'){ const e = enemies.find(x => x.wb && !x.dead); return Object.assign({}, w, {r:WB_BOSS[run.wbFight.b].music, scene:'boss', int:run.wbUlt ? 1 : e ? (e.phase === 3 ? 1 : e.phase === 2 ? 0.7 : 0.35) : 0.2}); }
+    return w; }; }
+// Duos: the partner's game gets the boss's phase, pose, cast state and domain timing from the host (the host runs the boss)
+if (typeof duoHostSnap === 'function'){
+  const _hs = duoHostSnap; duoHostSnap = function(){ const h = _hs.apply(this, arguments); try { if (run && run.wbFight){ const e = wbBoss();
+        h.wb = {p:e ? e.phase || 1 : 0, u:run.wbUlt ? Math.round(run.wbUlt.t*10)/10 : -1, ud:run.wbUlt ? Math.round(run.wbUlt.dur*10)/10 : 0, uo:run.wbUlt ? run.wbUlt.open : 0, c:e && e.casting > 0 ? 1 : 0, l:e && e.phaseLock > 0 ? 1 : 0, po:e && e.pose ? e.pose.k : 'idle', pt:e && e.pose ? Math.round(e.pose.t*100)/100 : 0, pd:e && e.pose ? e.pose.dur : 0}; } } catch(err){} return h; };
+  const _ga = duoGuestApply; duoGuestApply = function(h){ const r = _ga.apply(this, arguments);
+    try { if (run && run.wbFight && h && h.wb && typeof h.wb === 'object'){ const e = enemies.find(x => x.wb && !x.dead), w = h.wb, B = WB_BOSS[run.wbFight.b];
+        if (e && Number.isFinite(w.p) && w.p > (e.phase || 1)){ e.phase = w.p; run.wbFight.phase = w.p; run.wbFight.flash = 1.0; ring(e.x, e.y, e.r*4, B.col, 0.7); }
+        if (e){ e.casting = w.c ? 0.5 : 0; e.phaseLock = w.l ? 0.5 : 0; const ks = ['idle','raiseR','raiseL','both','push','gesture','converge','swipe','swipeL'];
+          if (ks.includes(w.po) && (!e.pose || e.pose.k !== w.po || Math.abs(e.pose.t - w.pt) > 0.35)) e.pose = {k:w.po, t:+w.pt || 0, dur:+w.pd || 0}; }
+        if (w.u >= 0){ if (!run.wbUlt) run.wbUlt = {b:run.wbFight.b, t:w.u, dur:+w.ud || 9, open:+w.uo || 1.5}; else if (Math.abs(run.wbUlt.t - w.u) > 0.4) run.wbUlt.t = w.u; }
+        else if (run.wbUlt && run.wbUlt.t > 1) run.wbUlt = null; } } catch(err){}
+    return r; };
+}
+
+// ---------- defeat, rewards, results ----------
+{ const _xd = xbDrop; xbDrop = function(e){ if (e && e.wb) return; return _xd.apply(this, arguments); }; }
+{ const _xf = xbDefeated; xbDefeated = function(e){
+    if (!e || !e.wb) return _xf.apply(this, arguments);
+    const B = wbB(e); banner('WORLD BOSS DEFEATED', B.name, B.gold);
+    run.bossDead = true; run.clearAt = run.t + 2.2; run.wbUlt = null;
+    for (const o of enemies) if (!o.dead && (o.wbAnchor || o.wbBanner)) o.dead = true;
+    zones = []; eprojs = [];
+    run.flash = Math.max(run.flash || 0, 0.9); }; }
+// the one roll that matters: once per event, never twice
+{ const _rl = rollBossLoot; rollBossLoot = function(key){
+    if (typeof key !== 'string' || !key.startsWith('wb_')) return _rl.apply(this, arguments);
+    if (!run || !run.wbFight) return;
+    const F = run.wbFight; if (F.rolled) return; F.rolled = true;
+    if (wbClaimed(F.ev)){ F.dupe = true; return; }
+    wbClaim(F.ev, F.b); F.claimNow = true;
+    // the event rewards are banked the moment the boss falls, so nothing is lost if the adds get you afterwards
+    { const R = wbRewardList(F.b, run.w); F.rew = R; gainCoins(R.coins, true); addMat('scrap', R.scrap); addMat('essence', R.essence); addMat('m_void', R.m_void); addMat(R.mat[0], R.mat[1]); addAXP(R.axp*AXP_DIFF[save.diff], 'stage'); }
+    const n0 = (run.got || []).length;
+    // the exclusive weapon: 1%
+    const wid = F.b === 'aeth' ? 'celestialrupture' : 'tyrantsfang';
+    if (wbRng() < WB_RATES.weapon){ if (save.weapons.includes(wid)) addMat('essence', 5); else { save.weapons.push(wid); markNew('w:' + wid); (run.got = run.got || []).push(WPN[wid].name); F.rare = (F.rare || []).concat({kind:'weapon', id:wid}); persist(); } }
+    // the Signature Power: 0.5% (rolled by the normal Signature Power code, using sigChance above)
+    const had = save.sigs.slice(); _rl.call(this, key);
+    for (const id of save.sigs) if (!had.includes(id)) F.rare = (F.rare || []).concat({kind:'sig', id});
+    persist(); }; }
+const WB_RATES = {weapon:0.01, sig:0.005};
+let wbRng = () => Math.random();
+{ const _sc = sigChance; sigChance = function(id){ const s = SIGM[id]; if (s && s.wb){ const r = WB_RATES.sig; return wbRng.forced != null ? (wbRng.forced < r ? 1 : 0) : r; } return _sc.apply(this, arguments); }; }
+function wbClaimed(ev){ const s = wbSave(); return s.claimed.includes(ev); }
+function wbClaim(ev, b){ const s = wbSave(); if (!s.claimed.includes(ev)) s.claimed.push(ev); while (s.claimed.length > 40) s.claimed.shift(); s.wins[b] = (s.wins[b] || 0) + 1; persist(); }
+function wbSave(){ if (!save.wb || typeof save.wb !== 'object') save.wb = {}; const s = save.wb; if (!Array.isArray(s.claimed)) s.claimed = []; if (!s.wins || typeof s.wins !== 'object') s.wins = {}; return s; }
+function wbRewardList(b, w){ const dm = save.diff === 'nightmare' ? 2 : save.diff === 'hard' ? 1 : 0;
+  return {coins:1500 + 500*dm, scrap:30 + 10*dm, essence:8 + 2*dm, m_void:2 + dm, mat:[WMATS[Math.max(0, Math.min(4, w))], 6 + 2*dm], axp:900 + 300*dm}; }
+{ const _ac = arenaClear; arenaClear = function(){
+    if (!run || !run.arena || run.arena.kind !== 'wb') return _ac.apply(this, arguments);
+    if (state !== 'play') return;
+    state = 'clear';
+    for (const g of gems){ run.xp += g.v*st.xpMul*CF().xp; } gems = [];
+    for (const c of coinsArr) gainCoins(c.v); coinsArr = [];
+    run.cleared = true;
+    const F = run.wbFight;
+    // a Duos partner's own client rolls their own loot; if the boss died on the host first, make sure we rolled here too
+    if (!F.rolled) rollBossLoot(WB_BOSS[F.b].key);
+    if (!run.tookDmg) unlockAch('flawless');
+    persist(); playVictory();
+    setTimeout(() => { if (state === 'clear') showResults(true); }, reduce ? 300 : 2000);
+  }; }
+{ const _ar = arenaResultsUI; arenaResultsUI = function(won){
+    if (!run || !run.arena || run.arena.kind !== 'wb') return _ar.apply(this, arguments);
+    const F = run.wbFight, B = WB_BOSS[F.b];
+    $('#resTitle').textContent = won ? 'World boss defeated!' : F.timeout ? 'The boss withdrew' : 'You fell';
+    $('#resTitle').style.color = won ? B.gold : 'var(--red)';
+    $('#resSub').textContent = won ? (F.claimNow ? `${B.name} · rewards claimed for this event` : `${B.name} · you already claimed this event's rewards`) : `${B.name} · ${F.timeout ? 'it fled after ' + Math.round(F.dur/60) + ' minutes. ' : ''}You can try again while the portal is open.`;
+    const btns = $('#resBtns'); btns.innerHTML = '';
+    if (won && F.rew){ const R = F.rew, box = el('div', 'wbrew'); box.appendChild(el('b', null, 'World boss rewards'));
+      const ul = el('div', 'wbrl'); for (const [ic, t] of [['coin', `${R.coins.toLocaleString()} coins`], ['scrap', `${R.scrap} ${MATS.scrap.name}`], ['essence', `${R.essence} ${MATS.essence.name}`], ['m_void', `${R.m_void} ${MATS.m_void.name}`], [R.mat[0], `${R.mat[1]} ${MATS[R.mat[0]].name}`], ['star', `${R.axp} Player XP`]]){ const d = el('span'); d.appendChild(icEl(ic)); d.append(' ' + t); ul.appendChild(d); }
+      box.appendChild(ul); if (!F.rare || !F.rare.length) box.appendChild(el('small', null, `No rare drop this time (${B.short}'s weapon 1% · Signature Power 0.5%).`)); btns.appendChild(box); }
+    const add = (label, cls, fn) => { const b = document.createElement('button'); b.className = 'btn ' + cls; b.textContent = label; b.addEventListener('click', fn); btns.appendChild(b); return b; };
+    add('Home', 'alt', () => navHome());
+    if (won && F.rare && F.rare.length) setTimeout(() => wbRareReveal(F.rare, B), 400);
+  }; }
+function wbRareReveal(list, B){
+  const ov = document.createElement('div'); ov.className = 'wbreveal'; const card = document.createElement('div'); card.className = 'wbrc'; card.style.setProperty('--wbc', B.col); ov.appendChild(card);
+  card.appendChild(el('small', null, 'LEGENDARY DROP'));
+  for (const it of list){ const row = el('div', 'wbri'); const ic = el('div', 'wbric'); ic.appendChild(icEl(it.kind === 'weapon' ? 'w_' + it.id : SIGM[it.id].icon)); row.appendChild(ic);
+    const tx = el('div'); tx.appendChild(el('b', null, it.kind === 'weapon' ? WPN[it.id].name : SIGM[it.id].name)); tx.appendChild(el('span', null, it.kind === 'weapon' ? 'Exclusive weapon · ' + WPN[it.id].ability : 'Signature Power · ' + SIGM[it.id].desc)); row.appendChild(tx); card.appendChild(row); }
+  card.appendChild(el('p', null, 'Equip it in the Locker Room.'));
+  const ok = el('button', 'btn', 'Claim'); ok.addEventListener('click', () => ov.remove()); card.appendChild(ok);
+  document.body.appendChild(ov); try { beep(523, 0.2, 'triangle', 0.06, null, 0); beep(784, 0.3, 'triangle', 0.06, null, 0.15); beep(1046, 0.7, 'sine', 0.05, null, 0.3); } catch(e){}
+  setTimeout(() => ok.focus({preventScroll:true}), 50);
+}
+{ const s = document.createElement('style'); s.textContent = `.wbrew{flex-basis:100%;background:rgba(10,8,30,.55);border:2px solid var(--line);border-radius:14px;padding:10px 12px;margin-bottom:8px;text-align:left}.wbrew b{display:block;font-size:13px;letter-spacing:.06em;color:var(--gold);margin-bottom:6px}.wbrl{display:flex;flex-wrap:wrap;gap:6px 12px;font:700 13px Rubik,system-ui,sans-serif}.wbrl span{display:inline-flex;align-items:center;gap:4px}.wbrl svg{width:18px;height:18px}.wbrew small{display:block;margin-top:6px;opacity:.75}
+.wbreveal{position:fixed;inset:0;z-index:80;display:grid;place-items:center;background:rgba(5,3,15,.78);animation:wbfade .4s ease}.wbrc{width:min(92vw,420px);background:linear-gradient(160deg,#1C1550,#0B0826);border:3px solid var(--wbc);border-radius:20px;padding:18px;text-align:center;color:#fff;box-shadow:0 0 0 4px rgba(0,0,0,.4),0 0 60px var(--wbc);animation:wbpop .5s cubic-bezier(.2,1.6,.4,1)}.wbrc>small{display:block;font:900 12px Rubik,system-ui,sans-serif;letter-spacing:.2em;color:var(--wbc)}.wbri{display:flex;gap:12px;align-items:center;text-align:left;margin:14px 0}.wbric{width:64px;height:64px;flex:none;border-radius:14px;background:rgba(255,255,255,.08);display:grid;place-items:center}.wbric svg{width:56px;height:56px}.wbri b{display:block;font-size:18px}.wbri span{font-size:12px;opacity:.85}.wbrc p{font-size:12px;opacity:.75}
+@keyframes wbfade{from{opacity:0}}@keyframes wbpop{from{transform:scale(.6);opacity:0}}`; document.head.appendChild(s); }
+// weapon source text in the Locker / Codex
+{ const _ws = weaponSource; weaponSource = function(id){ const w = WPN[id]; if (w && w.boss && w.boss.startsWith('wb_')) return `World-boss exclusive: a 1% drop from ${BOSSES[w.boss].name} (one roll per event victory). Never sold, crafted or found anywhere else.`; return _ws.apply(this, arguments); }; }
+
+// =====================================================================
+// WORLD BOSSES · the event: schedule, portal, map markers, HUD chip, announcements and entry.
+//   Schedule   a portal opens on every UTC half hour (:00 and :30) and stays open for 10 minutes.
+//              Everyone computes the same event from the clock, so all players see the same boss in the same
+//              place. On your own server the clock is corrected to the server's time.
+//   Boss       Aetherion or Malrath with equal odds, never the same one three events running.
+//   Place      one of the five regions (Forest 30%, Desert 25%, Frozen 20%, Infernal 15%, Neon 10%), at one of
+//              ten spots per region that were checked to be reachable on foot from the village and clear of
+//              buildings, NPCs, camps, doors and landmarks; checked again at runtime, with a fallback by the road.
+//   Locks      a portal in a region you haven't opened is shown on the map as locked; you can't reach it.
+//   Test mode  ?wbtest=1 runs a 4-minute cycle with a 2.5-minute window.
+// =====================================================================
+const WB = {test:/[?&]wbtest=1\b/.test(location.search), shift:0, guide:false, ann:{}, cache:{}, first:true};
+WB.period = WB.test ? 240e3 : 1800e3; WB.open = WB.test ? 150e3 : 600e3;
+WB.now = () => Date.now() + ((typeof NET !== 'undefined' && NET.serverSkew) || 0) + WB.shift;
+const WB_REGION_W = [30, 25, 20, 15, 10];
+const WB_SPOTS = {"0":[[1264,2352],[5104,2096],[2992,752],[3152,3728],[1328,688],[2896,2256],[4560,3440],[1776,3568],[3984,1520],[2032,1552]],
+  "1":[[1584,2288],[5040,2096],[3440,1008],[3600,3344],[528,3216],[2864,2128],[1872,3504],[528,2000],[2352,976],[4112,2192]],
+  "2":[[1232,2832],[4944,1936],[2768,1072],[3344,3440],[4272,560],[2320,2224],[1744,880],[3696,1488],[624,2128],[560,3344]],
+  "3":[[1936,1808],[5040,2224],[3344,3568],[1136,3600],[3632,976],[464,2256],[3184,2256],[1904,528],[2032,2928],[4112,2672]],
+  "4":[[1424,2512],[4816,560],[4304,3824],[2672,752],[3184,2448],[5136,2096],[2576,3664],[1360,432],[1360,3632],[4048,1744]]};
+const wbHash = (ev, salt) => hashStr('wb' + salt + ':' + ev);
+function wbBossFor(ev){
+  // equal odds, but never three in a row: walk forward from a fixed point so every client agrees
+  let a = null, b = null; for (let i = ev - 24; i <= ev; i++){ let x = wbHash(i, 'b') & 1 ? 'mal' : 'aeth'; if (a === x && b === x) x = x === 'aeth' ? 'mal' : 'aeth'; a = b; b = x; }
+  return b; }
+function wbRegionFor(ev){ let x = wbHash(ev, 'r') % 100; for (let i=0;i<5;i++){ if ((x -= WB_REGION_W[i]) < 0) return i; } return 0; }
+function wbSpotOk(m, x, y){ if (x < 120 || y < 120 || x > OW_W - 120 || y > OW_H - 120) return false; if (owBlocked(m, x, y, 46)) return false; if (m.reach && !m.reach(x, y, 30)) return false;
+  for (const n of m.npcs) if (Math.hypot(n.x - x, n.y - y) < 160) return false; for (const q of m.ints) if (Math.hypot(q.x - x, q.y - y) < 140) return false; return true; }
+function wbSpotFor(ev, region){
+  const k = 'sp' + ev + ':' + region; if (WB.cache[k]) return WB.cache[k];
+  WB.inSpot = true; try { return wbSpotFor0(ev, region, k); } finally { WB.inSpot = false; } }
+function wbSpotFor0(ev, region, k){
+  const m = owBuild(region), L = WB_SPOTS[region] || [], s0 = wbHash(ev, 's') % Math.max(1, L.length);
+  let p = null; for (let j=0;j<L.length;j++){ const [x, y] = L[(s0 + j) % L.length]; if (wbSpotOk(m, x, y)){ p = {x, y, k:(s0 + j) % L.length}; break; } }
+  if (!p){ const v = m.village, q = owFindFree(m, v.x + 520, v.y + 160, 46); p = {x:q.x, y:q.y, k:-1, fallback:true}; }
+  WB.cache[k] = p; return p; }
+function wbEvent(ev){ const start = ev*WB.period; return {ev, start, end:start + WB.open, b:wbBossFor(ev), region:wbRegionFor(ev)}; }
+// the current or next event
+function wbNow(){ const pn = performance.now(); if (WB._n && pn - WB._nt < 200 && WB._ns === WB.shift) return Object.assign({}, WB._n); WB._n = wbNow0(); WB._nt = pn; WB._ns = WB.shift; return Object.assign({}, WB._n); }
+function wbNow0(){ const t = WB.now(), ev = Math.floor(t/WB.period), E = wbEvent(ev);
+  if (t < E.end) return Object.assign(E, {open:true, left:E.end - t, t});
+  const N = wbEvent(ev + 1); return Object.assign(N, {open:false, until:N.start - t, t}); }
+function wbFmt(ms){ const s = Math.max(0, Math.ceil(ms/1000)); return Math.floor(s/60) + ':' + String(s % 60).padStart(2, '0'); }
+function wbLocalTime(ms){ try { return new Date(ms - ((typeof NET !== 'undefined' && NET.serverSkew) || 0) - WB.shift).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}); } catch(e){ return ''; } }
+// the open portal in this region, if there is one
+function wbPortalIn(i){ const E = wbNow(); if (!E.open || E.region !== i) return null; const p = wbSpotFor(E.ev, i); return Object.assign({}, p, {E, B:WB_BOSS[E.b]}); }
+
+// ---------- the portal in the world ----------
+LW_DRAWS.push((m, x0, y0, x1, y1) => { const p = wbPortalIn(m.i); if (!p || p.x < x0 - 200 || p.x > x1 + 200 || p.y < y0 - 260 || p.y > y1 + 200) return null; return [{y:p.y, fn:now => wbDrawPortal(p, now)}]; });
+LW_INTS.push(m => { const p = wbPortalIn(m.i); if (!p) return null; return [{x:p.x, y:p.y, r:95, id:'wbportal', label:'World Boss portal · ' + p.B.short, act:'Enter', fn:() => wbPortalPanel(m, p)}]; });
+LW_LIGHTS.push(m => { const p = wbPortalIn(m.i); if (!p) return null; return [[p.x, p.y - 60, 260, p.E.b === 'aeth' ? '155,123,255' : '255,90,31', 1]]; });
+function wbDrawPortal(p, now){
+  const c = ctx, B = p.B, x = p.x, y = p.y, late = p.E.left < 120e3, a = p.E.b === 'aeth', R = 64, cy = y - 78, pulse = late ? 1 + 0.07*Math.sin(now*9) : 1 + 0.025*Math.sin(now*2.5);
+  c.save();
+  // ground: scorched/runed circle and the collision footprint
+  c.globalAlpha = 0.6; c.fillStyle = a ? '#120D3A' : '#1A0204'; c.beginPath(); c.ellipse(x, y, 96, 32, 0, 0, TAU); c.fill();
+  c.globalAlpha = 0.9; c.strokeStyle = a ? '#5B8CFF' : '#E0283C'; c.lineWidth = 3; c.setLineDash([10, 8]); c.lineDashOffset = -now*30; c.beginPath(); c.ellipse(x, y, 90, 29, 0, 0, TAU); c.stroke(); c.setLineDash([]);
+  // space bending around it: faint ripples that drift outward
+  for (let i=0;i<3;i++){ const q = (now*0.35 + i/3) % 1; c.globalAlpha = (1 - q)*0.35; c.strokeStyle = a ? '#B9A8FF' : '#FF5A6E'; c.lineWidth = 2; c.beginPath(); c.ellipse(x, cy, R*(1.15 + q*0.9), R*(1.15 + q*0.9)*1.05, 0, 0, TAU); c.stroke(); }
+  c.globalAlpha = 1; c.translate(x, cy); c.scale(pulse, pulse);
+  if (a){
+    // Aetherion: a round dimensional gate. Bright blue outer ring, a dark cosmic centre, rotating rings, violet arcs.
+    const g = c.createRadialGradient(0, 0, 4, 0, 0, R); g.addColorStop(0, '#000004'); g.addColorStop(0.55, '#120A3A'); g.addColorStop(0.85, '#3B2385'); g.addColorStop(1, '#5B8CFF'); c.fillStyle = g; circle(c, 0, 0, R); c.fill();
+    c.save(); c.beginPath(); c.arc(0, 0, R*0.9, 0, TAU); c.clip(); for (let i=0;i<26;i++){ const q = ((now*0.25 + i*0.137) % 1), aa = i*2.4 + now*0.6, d = R*0.9*(1 - q); c.globalAlpha = q; c.fillStyle = i % 5 ? '#E6E0FF' : '#FFE07A'; c.fillRect(Math.cos(aa)*d - 1.5, Math.sin(aa)*d - 1.5, 3, 3); } c.restore();
+    c.globalAlpha = 1; for (let i=0;i<3;i++){ c.save(); c.rotate(now*(0.6 + i*0.35)*(i % 2 ? -1 : 1)); c.strokeStyle = i === 1 ? 'rgba(63,224,208,.85)' : 'rgba(185,168,255,.85)'; c.lineWidth = 2.5; c.beginPath(); c.ellipse(0, 0, R*(0.45 + i*0.17), R*(0.2 + i*0.1), 0, 0, TAU); c.stroke(); c.restore(); }
+    c.strokeStyle = '#0B0826'; c.lineWidth = 9; circle(c, 0, 0, R); c.stroke(); c.strokeStyle = late ? '#FF9BD0' : '#5B8CFF'; c.lineWidth = 5; c.stroke(); c.strokeStyle = '#E6F6FF'; c.lineWidth = 1.5; c.stroke();
+    // purple distortion arcs crackling round the rim
+    c.strokeStyle = 'rgba(200,140,255,.9)'; c.lineWidth = 2; for (let i=0;i<3;i++){ const aa = now*2.3 + i*2.1 + Math.sin(now*11 + i)*0.3; if (Math.sin(now*7 + i*3) < 0.2) continue; c.beginPath(); for (let k=0;k<6;k++){ const ang = aa + k*0.09, rr = R*(1.02 + ((k*37 + Math.floor(now*20)) % 7)/50); k ? c.lineTo(Math.cos(ang)*rr, Math.sin(ang)*rr) : c.moveTo(Math.cos(ang)*rr, Math.sin(ang)*rr); } c.stroke(); }
+    // floating celestial symbols orbiting the gate
+    for (let i=0;i<6;i++){ const aa = now*0.5 + i*TAU/6, sx = Math.cos(aa)*R*1.35, sy = Math.sin(aa)*R*1.35*0.55; c.save(); c.translate(sx, sy); c.globalAlpha = 0.85; c.strokeStyle = '#FFD27A'; c.lineWidth = 2;
+      if (i % 3 === 0){ c.beginPath(); c.arc(0, 0, 6, 0, TAU); c.moveTo(-9, 0); c.lineTo(9, 0); c.stroke(); } else if (i % 3 === 1){ c.fillStyle = '#FFD27A'; star(c, 0, 0, 6, 4); c.fill(); } else { c.beginPath(); c.arc(0, 0, 6, 0.5, TAU - 0.5); c.stroke(); } c.restore(); }
+  } else {
+    // Malrath: a crimson gate with a pointed arch, black-red swirl, sharp markings, hovering spectral blades, smoke and sparks
+    const H0 = R*1.25, W0 = R*0.95; c.beginPath(); c.moveTo(-W0, H0*0.55); c.lineTo(-W0, -H0*0.15); c.quadraticCurveTo(-W0, -H0*0.85, 0, -H0*1.05); c.quadraticCurveTo(W0, -H0*0.85, W0, -H0*0.15); c.lineTo(W0, H0*0.55); c.closePath();
+    c.save(); c.clip(); c.fillStyle = '#0A0002'; c.fillRect(-W0, -H0*1.1, W0*2, H0*1.7);
+    for (let i=0;i<4;i++){ c.save(); c.rotate(now*(1.2 + i*0.4)*(i % 2 ? -1 : 1)); c.strokeStyle = i % 2 ? 'rgba(224,40,60,.85)' : 'rgba(80,0,10,.9)'; c.lineWidth = 7 - i; c.beginPath(); for (let k=0;k<40;k++){ const ang = k*0.32, rr = 4 + k*1.6; k ? c.lineTo(Math.cos(ang)*rr, Math.sin(ang)*rr) : c.moveTo(0, 0); } c.stroke(); c.restore(); }
+    c.restore();
+    c.strokeStyle = '#000'; c.lineWidth = 9; c.stroke(); c.strokeStyle = late ? '#FFD27A' : '#E0283C'; c.lineWidth = 4 + 2*Math.sin(now*5); c.stroke();
+    // sharp glowing markings on the frame
+    c.strokeStyle = `rgba(255,${Math.round(60 + 40*Math.sin(now*4))},70,.95)`; c.lineWidth = 2.5; for (const sx of [-1, 1]) for (let k=0;k<3;k++){ const yy = -H0*0.05 + k*H0*0.2; c.beginPath(); c.moveTo(sx*(W0 + 6), yy - 8); c.lineTo(sx*(W0 + 14), yy); c.lineTo(sx*(W0 + 6), yy + 8); c.stroke(); }
+    c.beginPath(); c.moveTo(-10, -H0*1.12); c.lineTo(0, -H0*1.3); c.lineTo(10, -H0*1.12); c.stroke();
+    // spectral blades hovering round it
+    for (let i=0;i<5;i++){ const aa = -Math.PI/2 + (i - 2)*0.55 + Math.sin(now*1.3 + i)*0.05, d = H0*1.35 + Math.sin(now*2 + i)*4; c.save(); c.translate(Math.cos(aa)*d*0.85, Math.sin(aa)*d*0.7 - 8); c.rotate(aa + Math.PI/2); c.globalAlpha = 0.75; c.fillStyle = '#FFD6DC'; c.strokeStyle = '#3A0A10'; c.lineWidth = 2; c.beginPath(); c.moveTo(0, -16); c.lineTo(4, 6); c.lineTo(0, 10); c.lineTo(-4, 6); c.closePath(); c.fill(); c.stroke(); c.restore(); }
+    // smoke and sparks
+    for (let i=0;i<8;i++){ const q = (now*0.4 + i/8) % 1; c.globalAlpha = (1 - q)*0.35; c.fillStyle = '#2A2224'; circle(c, Math.sin(i*2.1)*W0*0.8 + Math.sin(now + i)*6, H0*0.5 - q*H0*1.6, 10 + q*16); c.fill(); }
+    for (let i=0;i<7;i++){ const q = (now*0.9 + i/7) % 1; c.globalAlpha = 1 - q; c.fillStyle = i % 2 ? '#FF8A3A' : '#FF3B55'; c.fillRect(Math.sin(i*1.7 + now)*W0*0.9 - 1.5, H0*0.4 - q*H0*1.5, 3, 3); }
+  }
+  c.restore();
+  // name, region and countdown
+  c.save(); c.textAlign = 'center'; const top = cy - R*1.45 - 22;
+  c.font = '900 15px Rubik, system-ui, sans-serif'; const label = B.short.toUpperCase() + ' · WORLD BOSS', tw = c.measureText(label).width + 18;
+  c.fillStyle = 'rgba(10,8,30,.85)'; rrect(c, x - tw/2, top - 24, tw, 22, 11); c.fill(); c.strokeStyle = B.col; c.lineWidth = 2; c.stroke(); c.fillStyle = a ? '#B9A8FF' : '#FF6A7A'; c.fillText(label, x, top - 8);
+  const cd = 'entry closes in ' + wbFmt(p.E.left); c.font = '800 13px Rubik, system-ui, sans-serif'; const cw = c.measureText(cd).width + 14; c.fillStyle = 'rgba(10,8,30,.78)'; rrect(c, x - cw/2, top + 2, cw, 18, 9); c.fill(); c.fillStyle = late ? '#FF9BA6' : '#FFE07A'; c.fillText(cd, x, top + 15);
+  c.restore();
+}
+// the portal is solid: you walk up to it, not through it
+{ const _ob = owBlocked; owBlocked = function(m, x, y, r){ if (_ob.apply(this, arguments)) return true; if (WB.inSpot || !m || typeof OW === 'undefined' || !OW.map || OW.map !== m) return false;
+    const p = WB._pc && WB._pc.m === m.i && performance.now() - WB._pc.t < 500 ? WB._pc.p : (WB._pc = {m:m.i, t:performance.now(), p:wbPortalIn(m.i)}).p;
+    return !!(p && ((x - p.x)/62)**2 + ((y - p.y)/24)**2 < 1 + (r || 0)/30); }; }
+// a low hum near the portal (positional; only within earshot)
+setInterval(() => { try { if (typeof state === 'undefined' || state !== 'world' || !OW.map || !OW.p) return; const p = wbPortalIn(OW.map.i); if (!p || Math.hypot(p.x - OW.p.x, p.y - OW.p.y) > 700) return;
+  if (typeof auSfx === 'function') auSfx(p.E.b === 'aeth' ? 'wb_barrier' : 'wb_fire_charge', {wx:p.x, wy:p.y, r0:120, r1:700, vol:p.E.b === 'aeth' ? 0.35 : 0.25, rate:p.E.b === 'aeth' ? 0.6 : 0.7, pri:1, max:1, key:'wbhum', rev:0.6}); } catch(e){} }, 1800);
+// ---------- markers: map, minimap, icon ----------
+{ const _mk = owMarkers; owMarkers = function(m){ const out = _mk.apply(this, arguments); try { const p = wbPortalIn(m.i); if (p) out.push({k:'wb', x:p.x, y:p.y, name:`World Boss · ${p.B.name} · closes in ${wbFmt(p.E.left)}`, wb:true}); } catch(err){} return out; }; }
+{ const _oi = owIcon; owIcon = function(g, kind, x, y, s=1){ if (kind !== 'wb') return _oi.apply(this, arguments);
+    const E = wbNow(), a = E.b === 'aeth', col = a ? '#9B7BFF' : '#E0283C'; g.save(); g.translate(x, y); g.scale(s, s); g.lineWidth = 2; g.strokeStyle = OWL;
+    g.fillStyle = col; g.beginPath(); g.ellipse(0, 0, 7, 10, 0, 0, TAU); g.fill(); g.stroke(); g.fillStyle = a ? '#E6E0FF' : '#FFE07A'; g.beginPath(); g.ellipse(0, 0, 3, 5, 0, 0, TAU); g.fill();
+    g.restore(); }; }
+// minimap: an edge pointer when the portal is off screen, and a pulse when it is near closing
+{ const _om = owDrawMini; owDrawMini = function(m){ const r = _om.apply(this, arguments);
+    try { const p = wbPortalIn(m.i), cv = $('#owMini'); if (!p || !cv || cv.offsetParent === null || !OW.p) return r; const g = cv.getContext('2d'), k = 0.1, Wm = cv.width, Hm = cv.height, sx = OW.p.x*k - Wm/2, sy = OW.p.y*k - Hm/2;
+      let x = p.x*k - sx, y = p.y*k - sy; const off = x < 8 || y < 8 || x > Wm - 8 || y > Hm - 8; const now = performance.now()/1000;
+      if (off){ const a = Math.atan2(y - Hm/2, x - Wm/2), R = Math.min(Wm, Hm)/2 - 10; x = Wm/2 + Math.cos(a)*(Wm/2 - 10); y = Hm/2 + Math.sin(a)*(Hm/2 - 10); x = Math.max(9, Math.min(Wm - 9, x)); y = Math.max(9, Math.min(Hm - 9, y)); }
+      g.save(); g.strokeStyle = p.E.left < 120e3 ? '#FF5A6E' : p.B.col; g.lineWidth = 2; g.globalAlpha = 0.5 + 0.5*Math.sin(now*(p.E.left < 120e3 ? 9 : 4)); g.beginPath(); g.arc(x, y, 9 + 3*Math.sin(now*4), 0, TAU); g.stroke(); g.restore();
+      owIcon(g, 'wb', x, y, off ? 0.8 : 1); } catch(err){}
+    return r; }; }
+// the world map: an animated marker layer (pulse, live countdown), a tab dot, a legend line, click to guide
+let WB_MAPRAF = 0;
+{ const _rm = owRenderMap; owRenderMap = function(){ const r = _rm.apply(this, arguments); try { wbMapLayer(); } catch(err){ console.error(err); } return r; }; }
+function wbMapLayer(){
+  const ov = $('#owMap'); if (!ov) return; const E = wbNow(), cv = ov.querySelector('.owmc canvas'), tabs = ov.querySelectorAll('.owmt .tab'), legend = ov.querySelector('.owml');
+  const info = el('p', 'note wbml'); legend.after(info);
+  if (!E.open){ info.textContent = `Next world boss portal: ${WB_BOSS[E.b].name} in ${OW_REGIONS[E.region].name}, opening in ${wbFmt(E.until)} (${wbLocalTime(E.start)}).`; return; }
+  const tab = tabs[E.region]; if (tab){ const d = el('i', 'wbdot'); d.style.background = WB_BOSS[E.b].col; tab.appendChild(d); }
+  const k = owMapRegion, open = owRegionOpen(E.region), B = WB_BOSS[E.b];
+  info.textContent = `World Boss portal open: ${B.name} in ${OW_REGIONS[E.region].name}${open ? '' : ' (locked for you)'} · closes in ${wbFmt(E.left)}.` + (k !== E.region ? ' Open that tab to see it.' : open ? ' Click the portal to set a guide arrow.' : '');
+  if (k !== E.region || !cv) return;
+  // overlay canvas over the map
+  const box = cv.parentNode; if (getComputedStyle(box).position === 'static') box.style.position = 'relative'; const lay = document.createElement('canvas'); lay.className = 'wblay'; lay.width = cv.width; lay.height = cv.height; box.appendChild(lay);
+  const fit = () => { lay.style.left = cv.offsetLeft + 'px'; lay.style.top = cv.offsetTop + 'px'; lay.style.width = cv.offsetWidth + 'px'; lay.style.height = cv.offsetHeight + 'px'; }; fit();
+  const sc = cv.width/OW_W, p = open ? wbSpotFor(E.ev, E.region) : null;
+  if (!open){ requestAnimationFrame(fit); setTimeout(fit, 200); const g = lay.getContext('2d'); g.fillStyle = '#FF9BD0'; g.font = '800 14px system-ui'; g.textAlign = 'center'; g.fillText('A World Boss portal is open here, but this region is locked for you.', lay.width/2, lay.height/2 + 70); return; }
+  const tick = () => { if (!lay.isConnected){ WB_MAPRAF = 0; return; } if (lay.style.width !== cv.offsetWidth + 'px') fit(); const g = lay.getContext('2d'), now = performance.now()/1000, E2 = wbNow(); g.clearRect(0, 0, lay.width, lay.height);
+    if (!E2.open || E2.ev !== E.ev){ info.textContent = 'The World Boss portal has closed.'; return; }
+    const x = p.x*sc, y = p.y*sc, late = E2.left < 120e3, sp = late ? 7 : 3;
+    for (let i=0;i<2;i++){ const q = ((now*sp*0.25 + i/2) % 1); g.strokeStyle = late ? '#FF5A6E' : B.col; g.globalAlpha = 1 - q; g.lineWidth = 3; g.beginPath(); g.arc(x, y, 10 + q*26, 0, TAU); g.stroke(); }
+    g.globalAlpha = 1; owIcon(g, 'wb', x, y, 1.5 + (late ? 0.15*Math.sin(now*9) : 0)); if (WB.guide){ g.strokeStyle = '#FFE07A'; g.lineWidth = 2; g.setLineDash([4, 4]); g.beginPath(); g.arc(x, y, 18, 0, TAU); g.stroke(); g.setLineDash([]); }
+    g.font = '800 12px Rubik, system-ui, sans-serif'; g.textAlign = 'center'; const t = `${B.short} · ${wbFmt(E2.left)}`, tw = g.measureText(t).width + 12; const ty = y - 26;
+    g.fillStyle = 'rgba(10,8,30,.85)'; rrect(g, x - tw/2, ty - 13, tw, 18, 9); g.fill(); g.fillStyle = late ? '#FF9BA6' : '#FFFFFF'; g.fillText(t, x, ty);
+    WB_MAPRAF = requestAnimationFrame(tick); };
+  cancelAnimationFrame(WB_MAPRAF); tick();
+  // clicking the portal sets a guide arrow (never teleports); other clicks keep working as before
+  const oc = cv.onclick; cv.onclick = ev => { const rc = cv.getBoundingClientRect(), mx = (ev.clientX - rc.left)*cv.width/rc.width, my = (ev.clientY - rc.top)*cv.height/rc.height;
+    if ((mx - p.x*sc)**2 + (my - p.y*sc)**2 < 22*22){ WB.guide = true; WB.guideEv = E.ev; beep(660, 0.08, 'triangle', 0.03, 990); info.textContent = `Guide set: follow the ${B.short} arrow to the portal in ${OW_REGIONS[E.region].name}. Fast travel to a waystone nearby, then walk.`; return; }
+    if (oc) oc.call(cv, ev); };
+}
+{ const s = document.createElement('style'); s.textContent = `.owmc canvas.wblay{position:absolute;pointer-events:none;background:none!important;max-width:none}.owmt .tab{position:relative}.wbdot{position:absolute;right:4px;top:4px;width:9px;height:9px;border-radius:50%;border:2px solid var(--line);animation:wbdp 1.2s infinite}@keyframes wbdp{50%{transform:scale(1.35)}}.wbml{color:#E6E0FF;margin-top:4px;white-space:normal;max-width:min(900px,92vw);text-align:center;margin-left:auto;margin-right:auto}
+#wbChip{display:block;margin:6px 0 0 auto;font:800 11px Rubik,system-ui,sans-serif;letter-spacing:.03em;color:#fff;background:rgba(10,8,30,.78);border:2px solid var(--wbc,#9B7BFF);border-radius:999px;padding:4px 10px;cursor:pointer;pointer-events:auto;max-width:240px;text-align:right}#wbChip.open{box-shadow:0 0 0 2px rgba(0,0,0,.25),0 0 14px var(--wbc)}#wbChip.late{animation:wbcl .8s infinite}@keyframes wbcl{50%{border-color:#FF5A6E}}`; document.head.appendChild(s); }
+// ---------- HUD chip, guide arrow, announcements ----------
+{ const _ht = owHudTick; owHudTick = function(dt){ const r = _ht.apply(this, arguments); try { wbChip(); } catch(err){} return r; }; }
+function wbChip(){
+  const hud = document.getElementById('owHud'); if (!hud) return; let c = document.getElementById('wbChip');
+  if (!c){ c = document.createElement('button'); c.id = 'wbChip'; c.addEventListener('click', ev => { ev.stopPropagation(); const E = wbNow(); if (E.open && owRegionOpen(E.region)){ WB.guide = true; WB.guideEv = E.ev; } owOpenMap(); if (E.open){ owMapRegion = E.region; owRenderMap(); } }); const host = hud.querySelector('.owh-r') || hud; host.appendChild(c); }
+  const E = wbNow(), B = WB_BOSS[E.b]; let lines;
+  if (E.open){ const lk = !owRegionOpen(E.region), here = OW.map && OW.map.i === E.region, done = wbClaimed(E.ev);
+    lines = [['h', done ? 'WORLD BOSS · DEFEATED' : 'WORLD BOSS ACTIVE'], ['n', B.name.toUpperCase()], ['r', 'PORTAL: ' + OW_REGIONS[E.region].name.toUpperCase() + (lk ? ' (LOCKED)' : '')], ['t', 'ENTRY CLOSES IN: ' + wbFmt(E.left)]];
+    if (!lk && !here && WB.guide) lines.push(['g', 'Travel to ' + OW_REGIONS[E.region].name]); }
+  else lines = [['h', 'NEXT WORLD BOSS — ' + wbFmt(E.until)]];
+  const sig = lines.map(l => l[1]).join('|');
+  if (c._t !== sig){ c._t = sig; c.innerHTML = ''; for (const [k, t] of lines){ const d = document.createElement('span'); d.className = 'wbl wbl-' + k; d.textContent = t; c.appendChild(d); } }
+  c.style.setProperty('--wbc', E.open ? B.col : '#5A6275'); c.classList.toggle('open', !!E.open); c.classList.toggle('late', !!(E.open && E.left < 120e3));
+  if (WB.guide && (!E.open || WB.guideEv !== E.ev)) WB.guide = false;
+}
+{ const s = document.createElement('style'); s.textContent = `#wbChip{display:flex!important;flex-direction:column;align-items:flex-end;gap:1px;border-radius:12px!important;padding:5px 10px!important;max-width:250px!important;background:linear-gradient(180deg,rgba(43,38,86,.92),rgba(20,17,46,.92))!important}#wbChip:not(.open){border-radius:999px!important}.wbl{display:block;line-height:1.25}.wbl-h{color:#FFE07A;font-weight:900;letter-spacing:.06em}.wbl-n{color:var(--wbc);font-weight:900;font-size:11px}.wbl-r{color:#E6E0FF;font-size:10px}.wbl-t{color:#FFFFFF;font-size:11px}#wbChip.late .wbl-t{color:#FF9BA6}.wbl-g{color:#9BF6B0;font-size:10px}`; document.head.appendChild(s); }
+// a guide arrow in the portal's colour while you are in its region
+{ const _od = owDraw; owDraw = function(now){ const r = _od.apply(this, arguments);
+    try { if (!WB.guide || state !== 'world' || !OW.map || !OW.p || OW.inside) return r; const p = wbPortalIn(OW.map.i); if (!p) return r;
+      const dx = p.x - OW.p.x, dy = p.y - OW.p.y, d = Math.hypot(dx, dy); if (d < 180) return r;
+      const Z = OW.Z, sx = (OW.p.x - OW.cam.x)*Z + W/2, sy = (OW.p.y - 18 - OW.cam.y)*Z + H/2, a = Math.atan2(dy, dx), R = 62 + 4*Math.sin(now*5);
+      ctx.save(); ctx.translate(sx + Math.cos(a)*R, sy + Math.sin(a)*R); ctx.rotate(a); ctx.globalAlpha = 0.95;
+      ctx.fillStyle = p.B.col; ctx.strokeStyle = 'rgba(20,16,44,.9)'; ctx.lineWidth = 3; ctx.lineJoin = 'round';
+      ctx.beginPath(); ctx.moveTo(18, 0); ctx.lineTo(-10, -14); ctx.lineTo(-4, 0); ctx.lineTo(-10, 14); ctx.closePath(); ctx.stroke(); ctx.fill();
+      ctx.rotate(-a); ctx.font = '800 11px Rubik, system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#FFFFFF'; ctx.strokeStyle = 'rgba(10,8,30,.9)'; ctx.lineWidth = 3; const t = Math.round(d/10) + ' m'; ctx.strokeText(t, 0, 28); ctx.fillText(t, 0, 28); ctx.restore();
+    } catch(err){}
+    return r; }; }
+function wbAnnounce(title, sub, col){
+  try { toast('boss', title, sub); } catch(e){}
+  if (typeof owIn === 'function' && owIn() && state === 'world') OW.card = {title, sub, t:3.6};
+  try { if (typeof auSfx === 'function') auUi && auUi('complete', {vol:0.5, cd:400}); else beep(523, 0.15, 'triangle', 0.04, 784); } catch(e){}
+}
+// the event-start announcement: a short card that slides in with the boss's portrait; click (or wait 4 s) to dismiss
+function wbCall(E){
+  const B = WB_BOSS[E.b]; document.querySelectorAll('.wbcall').forEach(x => x.remove());
+  const d = document.createElement('div'); d.className = 'wbcall'; d.style.setProperty('--wbc', B.col);
+  const cv = document.createElement('canvas'); cv.width = 120; cv.height = 120; d.appendChild(cv);
+  const tx = document.createElement('div'); const h = document.createElement('b'); h.textContent = B.call; const n = document.createElement('span'); n.textContent = B.name; const r = document.createElement('small'); r.textContent = `Portal: ${OW_REGIONS[E.region].name} · entry closes in ${wbFmt(E.left)}` + (owRegionOpen(E.region) ? '' : ' · region locked for you'); tx.append(h, n, r); d.appendChild(tx);
+  d.addEventListener('click', () => d.remove()); document.body.appendChild(d); setTimeout(() => d.classList.add('out'), 4000); setTimeout(() => d.remove(), 4600);
+  wbPortrait(cv, E.b); try { wbSfx('wb_event', {vol:0.8, pri:4, bus:'ui'}); } catch(e){}
+}
+function wbPortrait(cv, b){ const g = cv.getContext('2d'), S0 = S, ctx0 = ctx; const t0 = performance.now(); const fake = {wb:b, x:0, y:0, r:30, flash:0, phase:1, wob:1, pose:{k:'gesture', t:0.6, dur:0}, _lx:0};
+  const tick = () => { if (!cv.isConnected) return; const now = performance.now()/1000; g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, 120, 120);
+    const gr = g.createRadialGradient(60, 60, 5, 60, 60, 60); gr.addColorStop(0, b === 'aeth' ? '#3B2385' : '#5A0A14'); gr.addColorStop(1, '#0B0826'); g.fillStyle = gr; g.beginPath(); g.arc(60, 60, 58, 0, TAU); g.fill();
+    g.save(); g.beginPath(); g.arc(60, 60, 58, 0, TAU); g.clip(); g.translate(60, 92); const savedS = S; S = 1; const savedParts = parts.length;
+    try { const A = wbArms(fake, now); if (b === 'aeth') wbDrawAeth(g, fake, 30, now, 1, A, false); else wbDrawMal(g, fake, 30, now, 1, A, false, 0); } catch(e){} finally { S = savedS; parts.length = savedParts; }
+    g.restore(); g.strokeStyle = b === 'aeth' ? '#9B7BFF' : '#E0283C'; g.lineWidth = 4; g.beginPath(); g.arc(60, 60, 57, 0, TAU); g.stroke();
+    if (performance.now() - t0 < 6000) requestAnimationFrame(tick); }; tick(); }
+{ const s = document.createElement('style'); s.textContent = `.wbcall{position:fixed;left:50%;top:14px;z-index:70;display:flex;gap:12px;align-items:center;transform:translateX(-50%);background:linear-gradient(180deg,rgba(43,38,86,.96),rgba(20,17,46,.96));border:3px solid var(--wbc);border-radius:18px;padding:8px 16px 8px 8px;color:#fff;box-shadow:0 5px 0 var(--line),0 0 30px var(--wbc);cursor:pointer;animation:wbcin .45s cubic-bezier(.2,1.5,.4,1);max-width:min(560px,94vw)}
+.wbcall canvas{width:72px;height:72px;flex:none}.wbcall b{display:block;font:900 17px Rubik,system-ui,sans-serif;letter-spacing:.03em;color:#FFE07A}.wbcall span{display:block;font:800 13px Rubik,system-ui,sans-serif;color:var(--wbc);filter:brightness(1.3)}.wbcall small{display:block;font-size:12px;color:#E6E0FF;margin-top:2px}.wbcall.out{opacity:0;transform:translate(-50%,-20px);transition:all .5s}
+@keyframes wbcin{from{transform:translate(-50%,-40px) scale(.9);opacity:0}}`; document.head.appendChild(s); }
+function wbAnnTick(){
+  if (typeof save === 'undefined' || !save) return;
+  const E = wbNow(), B = WB_BOSS[E.b], where = OW_REGIONS[E.region].name, seen = WB.ann, first = WB.first; WB.first = false;
+  const say = (key, t, s) => { if (seen[key]) return; seen[key] = 1; if (!first || key.startsWith('open')) wbAnnounce(t, s, B.col); };
+  const busy = run && state === 'play';     // never pop toasts over a fight; they wait
+  if (busy) return;
+  if (E.open){
+    if (!seen['open' + E.ev]){ seen['open' + E.ev] = 1; wbCall(E); }
+    if (E.left < 120e3) say('late' + E.ev, 'World Boss portal closing', `${B.short}'s portal in ${where} closes in ${wbFmt(E.left)}.`);
+  } else {
+    const prev = E.ev - 1; if (seen['open' + prev] && !seen['shut' + prev]){ seen['shut' + prev] = 1; if (!first) wbAnnounce('World Boss portal closed', `The next one opens in ${wbFmt(E.until)}.`, '#5A6275'); }
+    if (E.until < 60e3) say('soon' + E.ev, 'A World Boss portal opens soon', `${B.name} arrives in ${where} in ${wbFmt(E.until)}.`);
+  }
+}
+setInterval(() => { try { wbAnnTick(); } catch(err){ console.error(err); } }, 1000);
+
+// ---------- the entry panel ----------
+function wbPortalPanel(m, p){
+  const E = p.E, B = p.B, done = wbClaimed(E.ev);
+  owPanel(B.name, body => {
+    const head = el('div', 'owdun-head'); head.innerHTML = `<span class="owdi"></span><div><b></b><small></small></div>`; head.querySelector('.owdi').innerHTML = iconSVG(E.b === 'aeth' ? 'sp_heavenfall' : 'sp_siege'); head.querySelector('b').textContent = B.title + ' · World Boss'; head.querySelector('small').textContent = B.lore; body.appendChild(head);
+    const kv = el('div', 'owkv'); const row = (k, v) => { const x = el('div'); x.append(el('span', null, k), el('b', null, v)); kv.appendChild(x); return x; };
+    row('Arena', B.arena);
+    const cl = row('Portal closes', wbFmt(E.left));
+    row('Difficulty', DIFF[save.diff].name + (save.diff !== 'normal' ? ' (bigger rewards)' : ''));
+    row('Your gear', 'Your Locker loadout: weapons, armour, pets, relics and your equipped Signature Power');
+    row('Fight', `Three phases and an ultimate (${B.ult}). ${Math.round(WB_FIGHT_DUR/60)} minutes before he withdraws.`);
+    const R = wbRewardList(E.b, OW_REGIONS[m.i].w);
+    row('Rewards', `${R.coins.toLocaleString()} coins · ${R.scrap} ${MATS.scrap.name} · ${R.essence} ${MATS.essence.name} · ${R.m_void} ${MATS.m_void.name} · ${R.mat[1]} ${MATS[R.mat[0]].name} · ${R.axp} Player XP`);
+    const wid = E.b === 'aeth' ? 'celestialrupture' : 'tyrantsfang', sid = E.b === 'aeth' ? 's_heavenfall' : 's_siege';
+    row('Rare drops', `${WPN[wid].name} (weapon, 1%)${save.weapons.includes(wid) ? ' · owned' : ''} · ${SIGM[sid].name} (Signature Power, 0.5%)${save.sigs.includes(sid) ? ' · owned' : ''}`);
+    row('Status', done ? 'Defeated: you already claimed this event. The next portal opens on the next half hour.' : 'Rewards available: one victory per event');
+    body.appendChild(kv);
+    const rowb = el('div', 'row owbtnrow');
+    const go = el('button', 'btn big', 'FIGHT SOLO'); go.disabled = done; go.addEventListener('click', () => wbEnter(m, p, false));
+    rowb.appendChild(go);
+    const canDuo = typeof DUO !== 'undefined' && MPW.on && PARTY.mate && PARTY.mate.online && PARTY.leader === mpMe() && !DUO.on;
+    if (typeof PARTY !== 'undefined' && PARTY.mate){ const du = el('button', 'btn alt', 'FIGHT AS DUOS'); du.disabled = done || !canDuo; du.title = canDuo ? `${duoMateName()} joins you` : PARTY.leader !== mpMe() ? 'Only the party leader can start' : 'Your partner is offline'; du.addEventListener('click', () => wbEnter(m, p, true)); rowb.appendChild(du); }
+    const cancel = el('button', 'btn alt', 'CANCEL'); cancel.addEventListener('click', owClosePanel); rowb.appendChild(cancel);
+    body.appendChild(rowb);
+    const t = setInterval(() => { if (!cl.isConnected){ clearInterval(t); return; } const E2 = wbNow(); if (!E2.open || E2.ev !== E.ev){ cl.lastChild.textContent = 'closed'; go.disabled = true; clearInterval(t); return; } cl.lastChild.textContent = wbFmt(E2.left); }, 500);
+  });
+}
+function wbEnter(m, p, duo){
+  const E = wbNow(); if (!E.open || E.ev !== p.E.ev){ owClosePanel(); toast('boss', 'The portal has closed', 'Wait for the next one.'); return; }
+  if (wbClaimed(E.ev)) return;
+  const w = OW_REGIONS[m.i].w;
+  const launch = () => { const sv = owSave(); sv.ret = {region:m.i, x:p.x, y:p.y + 90}; sv.region = m.i; sv.x = sv.ret.x; sv.y = sv.ret.y; try { owFogStore(m); } catch(e){} persist();
+    OW.launching = true; if (owIn()) owLeave(); try { wbStartArena(E.b, E.ev, w); } finally { OW.launching = false; } };
+  WB.guide = false;
+  if (duo){ DUO.pickW = null; DUO.wbNext = {b:E.b, ev:E.ev}; duoOffer(w, 10, false, launch); return; }
+  launch();
+}
+
+// =====================================================================
+// MULTIPLAYER · developer network diagnostics. Toggle with F8 (or open the game with ?netdbg=1).
+// Shows what the connection is really doing, so lag can be measured instead of guessed:
+//   ping (round trip, measured by echoing the partner's clock), updates received per second, updates lost or merged
+//   (sequence gaps), the adaptive interpolation delay, how often motion had to be extrapolated past the newest
+//   update, large position corrections, frame rate and how long one simulation step takes.
+// =====================================================================
+const NDG = {outRate:0, on:/[?&]netdbg=1\b/.test(location.search), el:null, fr:0, frT:performance.now(), fps:0, sim:0, ex0:0, exRate:0, snap0:0, snapRate:0, t:0};
+addEventListener('keydown', e => { if (e.code === 'F8'){ NDG.on = !NDG.on; if (!NDG.on && NDG.el){ NDG.el.remove(); NDG.el = null; } e.preventDefault(); } });
+{ const _up = update; update = function(dt){ const t0 = performance.now(); const r = _up.apply(this, arguments); NDG.sim = NDG.sim*0.9 + (performance.now() - t0)*0.1; return r; }; }
+// count big corrections: a mirrored enemy or the partner moving more than 80 px in one frame
+{ const _gi = duoGuestInterp; duoGuestInterp = function(){ const before = new Map(); for (const [id, e] of DUO.mir) before.set(id, [e.x, e.y]); const r = _gi.apply(this, arguments);
+    for (const [id, e] of DUO.mir){ const b = before.get(id); if (b && Math.hypot(e.x - b[0], e.y - b[1]) > 80) NET_DIAG.snap++; } return r; }; }
+(function ndgLoop(){ requestAnimationFrame(ndgLoop); NDG.fr++; const now = performance.now();
+  if (now - NDG.frT < 500) return; const dt = (now - NDG.frT)/1000; NDG.fps = NDG.fr/dt; NDG.fr = 0; NDG.frT = now;
+  NDG.exRate = (NET_DIAG.ex - NDG.ex0)/dt; if (typeof DUO !== 'undefined'){ NDG.outRate = ((DUO.outN || 0) - (NDG.out0 || 0))/dt; NDG.out0 = DUO.outN || 0; } NDG.ex0 = NET_DIAG.ex; NDG.snapRate = (NET_DIAG.snap - NDG.snap0)/dt; NDG.snap0 = NET_DIAG.snap;
+  if (!NDG.on) return;
+  if (!NDG.el){ NDG.el = document.createElement('pre'); NDG.el.id = 'netdbg'; document.body.appendChild(NDG.el); }
+  const L = [`NET  ${typeof NET !== 'undefined' ? (NET.kind || '-') + ' · ' + (NET.state || '-') : 'off'}`, `FPS  ${NDG.fps.toFixed(0)}   sim ${NDG.sim.toFixed(2)} ms/step`];
+  if (typeof DUO !== 'undefined' && DUO.on && DUO.clk){ const C = DUO.clk, lost = C.got + C.gaps ? C.gaps/(C.got + C.gaps)*100 : 0;
+    L.push(`DUOS ${DUO.role}${DUO.solo ? ' (partner gone)' : ''}`, `ping ${C.rtt ? C.rtt.toFixed(0) + ' ms' : '…'}   updates in ${C.rate.toFixed(1)}/s   out ${NDG.outRate.toFixed(1)}/s`,
+      `lost/merged ${lost.toFixed(1)}%   interp delay ${C.delay.toFixed(0)} ms`, `extrapolated ${NDG.exRate.toFixed(1)}/s   corrections ${NDG.snapRate.toFixed(1)}/s`,
+      `mirrors ${DUO.mir.size}   defs ${DUO.defs.size}   snaps ${DUO.snaps.length}`); }
+  if (typeof MPW !== 'undefined' && MPW.on){ let n = 0, d = 0, r = 0; for (const R of MPW.remotes.values()){ if (R.clk){ n++; d += R.clk.delay; r += R.clk.rate; } }
+    L.push(`WORLD ${MPW.inst || '-'}   players ${MPW.remotes.size + 1}`, n ? `avg interp delay ${(d/n).toFixed(0)} ms   avg updates in ${(r/n).toFixed(1)}/s` : 'no remote players'); }
+  NDG.el.textContent = L.join('\n'); })();
+{ const s = document.createElement('style'); s.textContent = `#netdbg{position:fixed;left:8px;bottom:8px;z-index:90;margin:0;padding:8px 10px;background:rgba(5,4,15,.82);color:#9BF6B0;font:12px/1.45 ui-monospace,Menlo,monospace;border:1px solid #2B2370;border-radius:8px;pointer-events:none;white-space:pre}`; document.head.appendChild(s); }
 
 
 resize(); setMute(muted); updateCoinLabels();
