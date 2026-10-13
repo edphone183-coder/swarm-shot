@@ -1,0 +1,10 @@
+{
+  "name": "swarm-shot-server",
+  "version": "1.0.0",
+  "description": "Swarm Shot: serves the game and runs online multiplayer (open world, parties, chat, Duos)",
+  "main": "server.js",
+  "scripts": { "start": "node server.js" },
+  "engines": { "node": ">=18" },
+  "license": "UNLICENSED",
+  "private": true
+}
