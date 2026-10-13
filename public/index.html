@@ -1394,9 +1394,9 @@ addEventListener('resize', resize);
 // =====================================================================
 const RAR = {
   common:{name:'Common', col:'#A3A9B3'}, rare:{name:'Rare', col:'#3B82F6'}, epic:{name:'Epic', col:'#B05CFF'},
-  legendary:{name:'Legendary', col:'#FFB800'}, mythic:{name:'Mythic', col:'#FF3D9A'}
+  legendary:{name:'Legendary', col:'#FFB800'}, mythic:{name:'Mythic', col:'#FF3D9A'}, secret:{name:'Secret', col:'#C9A2FF', secret:true}
 };
-const RORDER = ['common','rare','epic','legendary','mythic'];
+const RORDER = ['common','rare','epic','legendary','mythic','secret'];
 const METAL = {iron:'#AEB6C2', gold:'#FFC83D', diamond:'#6FE7F2', dragon:'#C0392B', celestial:'#FFE9A8', void:'#4B1F7A'};
 
 const SKINS = [
@@ -1615,12 +1615,12 @@ Object.assign(WG, {
   nightmarescythe:() => G.l('M14 60 L40 6','#2B2140',6) + G.p('M40 6 Q6 4 4 34 Q14 16 36 16 Z','#B05CFF') + G.l('M10 30 Q16 18 34 14','#E9DCFF',2) + G.c(40,6,4,'#F0384F',2) + G.c(24,50,3,'#F0384F',0),
 });
 for (const k of ['candycannon','puppetstrings','serpentsthunder','emperorscrystal','nightmarescythe']) GL['w_' + k] = WG[k];
-WPN.celestialrupture = {name:'Celestial Rupture', rarity:'mythic', icon:'', col:'#9B7BFF',
-  desc:'Two orbs form at your hands, a teal one that pulls and a gold one that pushes. They orbit, collide and merge into a white-violet core that you launch at the swarm. It cuts through everything in its path and bursts on impact. Level 4 adds a gravity drag along its path; level 5 a far bigger burst.',
+WPN.celestialrupture = {name:'Celestial Rupture', rarity:'secret', icon:'', col:'#9B7BFF',
+  desc:'Two orbs form at your hands, a teal one that pulls (gravity) and a gold one that pushes (repulsion). They orbit, collide and merge into a white-violet core that you launch at the swarm. It cuts through everything in its path and bursts on impact. Level 4 adds a gravity drag along its path; level 5 a far bigger burst.',
   ability:'Two orbs merge into one devastating core.', kind:'proj', proj:'rupture', cd:0.7, dmg:34, shots:1, spread:0.18, spd:540, range:480, pierce:0, aoe:64,
   gun:'#5A44C8', len:1.25, wid:0.78, excl:true, boss:'wb_aeth', sfx:'grav'};
-WPN.tyrantsfang = {name:"Tyrant's Fang", rarity:'mythic', icon:'', col:'#E0283C',
-  desc:'A cutting gesture sends a fast, nearly invisible slash at the nearest enemy, leaving a thin crimson trail. Levels add a second slash, wider arcs, slashes at several targets, then rapid combinations. Every few seconds it lines up a heavy execution cut across the target area.',
+WPN.tyrantsfang = {name:"Tyrant's Fang", rarity:'secret', icon:'', col:'#E0283C',
+  desc:'Unleashes rapid, nearly invisible cutting waves and devastating execution slashes. Levels add a second slash, wider arcs, slashes at several targets, then rapid combinations; every few volleys it lines up a heavy execution cut across the target area.',
   ability:'Near-invisible slashes; a heavy execution cut.', kind:'proj', proj:'fang', cd:0.38, dmg:17, shots:1, spread:0.16, spd:900, range:440, pierce:2,
   gun:'#4A0810', len:1.15, wid:0.7, excl:true, boss:'wb_mal', sfx:'slash'};
 const WIDS = Object.keys(WPN).filter(id => !WPN[id].fusion);
@@ -2549,7 +2549,7 @@ function bossDrop(e){
 }
 // ---------- equipment levels & ascension ----------
 const EQ_COST = [100, 200, 350, 550, 800, 1100, 1500, 2000, 3000];
-const EQ_RMUL = {common:0.5, rare:0.75, epic:1, legendary:1.25, mythic:1.5};
+const EQ_RMUL = {common:0.5, rare:0.75, epic:1, legendary:1.25, mythic:1.5, secret:1.75};
 const eqLv = key => save.eq[key] || 1;
 function matFor(key){ const id = key.split(':')[1]; if (key.startsWith('a:') && AR[id] && AR[id].set) return SET_MAT[AR[id].set]; return WMATS[hashStr(id) % 5]; }
 function eqRarity(key){ const [t, id] = key.split(':'); return t === 'w' ? WPN[id].rarity : t === 'a' ? AR[id].rarity : t === 'p' ? PETM[id].rarity : t === 'r' ? RELM[id].rarity : ACCM[id].rarity; }
@@ -3367,12 +3367,14 @@ function toolbar(onChange){
   const sel = (opts, cur, fn, label) => { const x = el('select', 'sel'); x.setAttribute('aria-label', label); for (const [k, l] of opts){ const o = el('option', null, l); o.value = k; if (k === cur) o.selected = true; x.appendChild(o); } x.addEventListener('change', () => { fn(x.value); onChange(); }); return x; };
   t.appendChild(sel([['rarity','Sort: rarity'],['level','Sort: level'],['type','Sort: type'],['new','Sort: newest'],['name','Sort: name']], lockQ.sort, v => lockQ.sort = v, 'Sort'));
   t.appendChild(sel([['all','Show: all'],['owned','Show: owned'],['fav','Show: favourites'],['new','Show: new']], lockQ.filt, v => lockQ.filt = v, 'Filter'));
+  t.appendChild(sel([['all','Rarity: all'], ...RORDER.slice().reverse().map(r => [r, 'Rarity: ' + RAR[r].name])], lockQ.rar || 'all', v => lockQ.rar = v, 'Rarity'));
   return t;
 }
 function filterSort(items){
   // items: [{key, name, rarity, type, owned, lv}]
   const q = lockQ.q.trim().toLowerCase();
   let a = items.filter(x => !q || x.name.toLowerCase().includes(q) || x.type.toLowerCase().includes(q) || RAR[x.rarity].name.toLowerCase().includes(q));
+  if (lockQ.rar && lockQ.rar !== 'all') a = a.filter(x => x.rarity === lockQ.rar);
   if (lockQ.filt === 'owned') a = a.filter(x => x.owned); if (lockQ.filt === 'fav') a = a.filter(x => isFav(x.key)); if (lockQ.filt === 'new') a = a.filter(x => isNew(x.key));
   const R = x => RORDER.indexOf(x.rarity);
   const cmp = {rarity:(a, b) => R(b) - R(a), level:(a, b) => b.lv - a.lv || R(b) - R(a), type:(a, b) => a.type.localeCompare(b.type) || R(b) - R(a), new:(a, b) => (save.got[b.key] || 0) - (save.got[a.key] || 0), name:(a, b) => a.name.localeCompare(b.name)}[lockQ.sort];
@@ -3382,7 +3384,7 @@ function confirmAsk(title, text, label, fn){
   $('#cfTitle').textContent = title; $('#cfText').textContent = text;
   const ok = $('#cfOk'); ok.innerHTML = ''; ok.append(label); confirmFn = fn; $('#confirmOv').hidden = false; ok.focus({preventScroll:true});
 }
-const DIS_SCRAP = {common:3, rare:6, epic:10, legendary:18, mythic:30};
+const DIS_SCRAP = {common:3, rare:6, epic:10, legendary:18, mythic:30, secret:45};
 function dismantle(key){
   const [t, id] = key.split(':');
   if (isFav(key)) return toast('lock', 'Protected', 'Favourites can never be dismantled.');
@@ -3924,7 +3926,7 @@ const BOSSES = {
   celestial:{name:'Celestial Guardian', live:false}, worldbreaker:{name:'Worldbreaker', live:false}, ancientgod:{name:'Ancient God', live:false},
   kraken:{name:'Abyssal Kraken', live:false}, clockwork:{name:'Clockwork God', live:false}, stareater:{name:'Star Eater', live:false},
 };
-const SIG_RATE = {epic:{base:0.03, hard:40}, legendary:{base:0.01, hard:80}, mythic:{base:0.003, hard:150}};
+const SIG_RATE = {epic:{base:0.03, hard:40}, legendary:{base:0.01, hard:80}, mythic:{base:0.003, hard:150}, secret:{base:0.005, hard:1e9}};
 const SIGS = [
   {id:'s_rage',      name:"Dragon's Rage",        boss:'w3',        rarity:'legendary', icon:'sp_rage',       col:'#FF5A1F', cd:40, dur:8, desc:'Take dragon form for 8s: +40% damage, every hit burns, and a flame burst scorches everything near you.'},
   {id:'s_azero',     name:'Absolute Zero',        boss:'w2',        rarity:'legendary', icon:'sp_azero',      col:'#9BE8FF', cd:42, dur:0, desc:'Freeze every normal enemy near you for 3s and slow bosses to half speed for 5s.'},
@@ -3964,9 +3966,9 @@ Object.assign(GL, {
 BOSSES.wb_aeth = {name:'Aetherion, the Void Sovereign', live:true};
 BOSSES.wb_mal = {name:'Malrath, the Crimson Tyrant', live:true};
 SIGS.push(
-  {id:'s_heavenfall', name:'Infinite Expanse', boss:'wb_aeth', rarity:'mythic', icon:'sp_expanse', col:'#9B7BFF', cd:75, dur:6, wb:true, domain:true,
+  {id:'s_heavenfall', name:'Infinite Expanse', boss:'wb_aeth', rarity:'secret', icon:'sp_expanse', col:'#9B7BFF', cd:75, dur:6, wb:true, domain:true,
     desc:'Domain. A cosmic dimension opens around you for 6s: enemies inside are heavily slowed and struck by cosmic energy every half second, and it ends in a blue-violet burst.'},
-  {id:'s_siege', name:'Crimson Dominion', boss:'wb_mal', rarity:'mythic', icon:'sp_dominion', col:'#E0283C', cd:75, dur:6, wb:true, domain:true,
+  {id:'s_siege', name:'Crimson Dominion', boss:'wb_mal', rarity:'secret', icon:'sp_dominion', col:'#E0283C', cd:75, dur:6, wb:true, domain:true,
     desc:'Domain. Crimson markings spread and a war-citadel rises behind you for 6s: spectral blades cut the enemies inside in waves, and it ends in one devastating cut.'},
 );
 const SIGM = Object.fromEntries(SIGS.map(s => [s.id, s]));
@@ -13290,9 +13292,9 @@ const PITY_CFG = {
   pet:   {soft:20, hard:50, step:2.5, mSoft:120, mHard:200, mStep:0.25},
   treasure:{soft:5, hard:15, step:6, mSoft:20, mHard:40, mStep:2},
 };
-const DUP_COINS = {common:40, rare:70, epic:120, legendary:250, mythic:500};
-const DUP_FRAGS = {common:25, rare:35, epic:50, legendary:80, mythic:100};
-const MAT = {common:{coins:60, frags:10}, rare:{coins:110, frags:20}, epic:{coins:180, frags:35}, legendary:{coins:350, frags:60}, mythic:{coins:700, frags:100}};
+const DUP_COINS = {common:40, rare:70, epic:120, legendary:250, mythic:500, secret:900};
+const DUP_FRAGS = {common:25, rare:35, epic:50, legendary:80, mythic:100, secret:150};
+const MAT = {common:{coins:60, frags:10}, rare:{coins:110, frags:20}, epic:{coins:180, frags:35}, legendary:{coins:350, frags:60}, mythic:{coins:700, frags:100}, secret:{coins:1200, frags:150}};
 const LEGACY_PRICE = {shotgun:600, railgun:1500, rocket:3000};
 const oddsFor = type => type === 'mythic' || type === 'treasure' ? MYTHIC_ODDS : type === 'race' ? RACE_ODDS : (type === 'material' || type === 'bossmat') ? MATC_ODDS : BASE_ODDS;
 let shopTab = 'weapon', cosTab = 'head', cosSel = null, lockTab = 'loadout', lockSel = null, lockFacing = 0, lockSpin = true, lockDrag = null;
@@ -13581,6 +13583,7 @@ function renderShop(){
 function oddsRow(type, eff){
   const odds = oddsFor(type), od = el('div', 'odds');
   for (const r of RORDER){
+    if (odds[r] == null) continue;
     const x = el('div'); x.style.setProperty('--rc', RAR[r].col);
     x.appendChild(el('b', null, fmtPct(odds[r]))); x.appendChild(el('span', null, RAR[r].name));
     if (eff && Math.abs(eff[r] - odds[r]) > 0.001) x.appendChild(el('em', null, 'now ' + fmtPct(eff[r])));
@@ -13882,7 +13885,7 @@ function renderLoadoutTab(body){
   row('Damage', wd.kind === 'shadow' ? '50% of your shots' : `${wd.dmg} → ${Math.round(wd.dmg*wLvDmg(5))} at Lv5`);
   row('Attack speed', wd.cd ? `${(1/wd.cd).toFixed(2)}/s → ${(1/(wd.cd*wLvCd(5))).toFixed(2)}/s at Lv5` : 'Continuous');
   row('Special', wd.ability);
-  row('Upgrade levels', `1–5 in each run · Lv3 & Lv5: ${wExtraLabel(wd)}`);
+  row('Upgrade levels', `1–5 in each run · ${/^Lv2/.test(wExtraLabel(wd)) ? '' : 'Lv3 & Lv5: '}${wExtraLabel(wd)}`);
   const fus = FUSIONS.filter(f => WPN[f].parts.includes(lockSel));
   if (fus.length) row('Fusion', fus.map(f => save.fusions.includes(f) ? WPN[f].name : '??? (discover it in a run)').join(', '));
   det.appendChild(kv);
@@ -15506,7 +15509,7 @@ if (!Array.isArray(save.tips)){ save.tips = []; if ((save.prog || []).reduce((a,
 const QUICK_CHEST_THRESHOLD = 5;      // this many chests on the map switches to quick collection
 const QUICK_CHEST_LINGER = 4000;      // stays quick this long after the last quick chest, so a cluster finishes quickly
 let QUICK_CHEST_UNTIL = 0;
-const RAR_ORDER = ['common', 'rare', 'epic', 'legendary', 'mythic'];
+const RAR_ORDER = ['common', 'rare', 'epic', 'legendary', 'mythic', 'secret'];
 const lootRarOf = item => RAR_ORDER.find(r => (LOOT[r] || []).includes(item)) || 'common';
 function quickChestMode(){
   if (!run) return false;
@@ -21722,7 +21725,7 @@ const AW = {
   star:(p, sd, r) => { const L = 0.6; return AD.mix(AD.buf(L).length, [AS.sines(0.6, [1760*p, 2640*p, 3520*p], 0.15, 0.06), 0.6], [AS.bell(2093*p, 0.5, 3, 1, 3), 0.2]); }
 };
 // every weapon gets its own voice: its family recipe, pitched and seeded by its name, richer at higher rarity
-const AU_RAR = {common:0, rare:1, epic:1.5, legendary:2, mythic:3};
+const AU_RAR = {common:0, rare:1, epic:1.5, legendary:2, mythic:3, secret:3.5};
 for (const [id, w] of Object.entries(WPN)){ w.__id = id; }
 function auWeaponName(wd){ return 'w_' + (wd && wd.__id || 'blaster'); }
 for (const [id, w] of Object.entries(WPN)){
@@ -24795,7 +24798,6 @@ Object.assign(GL, {
   sp_dominion:() => G.c(32,32,27,'#2A0204') + G.p('M14 46 V30 H20 V24 H26 V30 H38 V24 H44 V30 H50 V46 Z','#120304',2.5) + G.p('M28 46 V38 Q32 33 36 38 V46 Z','#FF5A1F',0) + G.l('M8 54 L56 54','#FF3B55',2) + G.l('M12 16 L26 10 M38 10 L52 16','#FFD6DC',2.5),
 });
 // drop chance in the Locker: a flat 0.5%, no pity (these are meant to be the rarest rewards in the game)
-{ const _sc = sigChance; sigChance = function(id){ return SIGM[id] && SIGM[id].wb ? 0.005 : _sc.apply(this, arguments); }; }
 // the Powers tab: a DOMAINS filter (the domains stay in the same collection and use the same Power slot)
 let WB_PFILT = 'all';
 { const _rp = renderPowersTab; renderPowersTab = function(body){ const r = _rp.apply(this, arguments);
@@ -24804,7 +24806,7 @@ let WB_PFILT = 'all';
         if (WB_PFILT === 'domain' && !dom){ card.remove(); return; }
         if (!dom) return;
         const tag = el('span', 'tag wbdtag', 'DOMAIN'); const t0 = card.querySelector('.stx .tag'); if (t0) t0.after(tag);
-        card.querySelectorAll('small.src').forEach((sm, k) => { if (k === 0) sm.textContent = `Boss source: ${BOSSES[s.boss].name} (World Boss Event) · Cooldown ${s.cd}s · lasts ${s.dur}s`; else sm.textContent = 'Drop chance 0.5% per world boss victory (one victory per event)'; });
+        card.querySelectorAll('small.src').forEach((sm, k) => { if (k === 0) sm.textContent = `Boss source: ${BOSSES[s.boss].name} (World Boss Event) · Cooldown ${s.cd}s · lasts ${s.dur}s`; else sm.textContent = `Drop chance ${fmtP(wbLootOf(s.id).p)} per world boss victory (one victory per event)`; });
         const pb = card.querySelector('.pb'); if (pb) pb.remove();
         // a small looping preview of the domain
         const ic = card.querySelector('.sic'); if (ic){ const cv = document.createElement('canvas'); cv.width = cv.height = 72; cv.className = 'wbprev'; ic.appendChild(cv); wbPreview(cv, s.id); } });
@@ -24873,6 +24875,8 @@ if (typeof duoMe === 'function'){
     try { if (typeof DUO !== 'undefined' && DUO.on && DUO.pl && DUO.pl.dx && run){ const ps = duoPartnerSample(); if (ps){ const id = DUO.pl.dx === 1 ? 's_heavenfall' : 's_siege', x = ps.x/10000*W, y = ps.y/10000*H;
           const t = (DUO.pl.dt || 0) + (performance.now() - DUO.plAt)/1000; if (t < 6.4) wbDrawDomain(ctx, id, x, y, (id === 's_heavenfall' ? 250 : 235)*S, t, performance.now()/1000); } } } catch(e){}
     return r; }; }
+// the icon caches may already hold a fallback for these keys (looked up before the artwork above existed): clear them
+for (const k of ['w_celestialrupture', 'w_tyrantsfang', 'celestialrupture', 'tyrantsfang', 'sp_expanse', 'sp_dominion', 's_heavenfall', 's_siege']){ try { delete ICON_CACHE[k]; delete ICON_IMG[k]; } catch(e){} }
 
 // =====================================================================
 // WORLD BOSSES · the fight: two original bosses, their arenas, attacks, three phases each and a domain ultimate.
@@ -25522,17 +25526,24 @@ if (typeof duoHostSnap === 'function'){
     wbClaim(F.ev, F.b); F.claimNow = true;
     // the event rewards are banked the moment the boss falls, so nothing is lost if the adds get you afterwards
     { const R = wbRewardList(F.b, run.w); F.rew = R; gainCoins(R.coins, true); addMat('scrap', R.scrap); addMat('essence', R.essence); addMat('m_void', R.m_void); addMat(R.mat[0], R.mat[1]); addAXP(R.axp*AXP_DIFF[save.diff], 'stage'); }
-    const n0 = (run.got || []).length;
-    // the exclusive weapon: 1%
-    const wid = F.b === 'aeth' ? 'celestialrupture' : 'tyrantsfang';
-    if (wbRng() < WB_RATES.weapon){ if (save.weapons.includes(wid)) addMat('essence', 5); else { save.weapons.push(wid); markNew('w:' + wid); (run.got = run.got || []).push(WPN[wid].name); F.rare = (F.rare || []).concat({kind:'weapon', id:wid}); persist(); } }
-    // the Signature Power: 0.5% (rolled by the normal Signature Power code, using sigChance above)
-    const had = save.sigs.slice(); _rl.call(this, key);
-    for (const id of save.sigs) if (!had.includes(id)) F.rare = (F.rare || []).concat({kind:'sig', id});
+    // the rare drops: one independent roll per item, from the loot table below (the same table the previews show)
+    for (const it of WB_LOOT[F.b]){ if (wbRoll() >= it.p) continue; wbGrant(it); F.rare = (F.rare || []).concat({kind:it.kind, id:it.id}); }
     persist(); }; }
-const WB_RATES = {weapon:0.01, sig:0.005};
-let wbRng = () => Math.random();
-{ const _sc = sigChance; sigChance = function(id){ const s = SIGM[id]; if (s && s.wb){ const r = WB_RATES.sig; return wbRng.forced != null ? (wbRng.forced < r ? 1 : 0) : r; } return _sc.apply(this, arguments); }; }
+// THE loot table. Every preview, the Locker and the rolls read these numbers, so they can't drift apart.
+const WB_LOOT = {
+  aeth:[{kind:'weapon', id:'celestialrupture', p:0.01}, {kind:'sig', id:'s_heavenfall', p:0.005}],
+  mal:[{kind:'weapon', id:'tyrantsfang', p:0.01}, {kind:'sig', id:'s_siege', p:0.005}],
+};
+const wbLootOf = id => { for (const b in WB_LOOT) for (const it of WB_LOOT[b]) if (it.id === id) return Object.assign({b}, it); return null; };
+// rolls use the browser's cryptographic random source (no pity, no guarantee). Tests can force them with wbRoll.force.
+function wbRoll(){ if (wbRoll.force != null) return wbRoll.force; try { const a = new Uint32Array(1); crypto.getRandomValues(a); return a[0]/4294967296; } catch(e){ return Math.random(); } }
+function wbGrant(it){
+  if (it.kind === 'weapon'){ if (save.weapons.includes(it.id)){ addMat('essence', 5); return; } save.weapons.push(it.id); markNew('w:' + it.id); if (run) (run.got = run.got || []).push(WPN[it.id].name); }
+  else { if (save.sigs.includes(it.id)){ addMat('essence', 5); return; } save.sigs.push(it.id); markNew('s:' + it.id); if (!save.sig) save.sig = it.id; qEv('sig', 1, {id:it.id}); if (run) (run.got = run.got || []).push(SIGM[it.id].name); }
+  persist();
+}
+{ const _sc = sigChance; sigChance = function(id){ const L = wbLootOf(id); return L ? L.p : _sc.apply(this, arguments); }; }
+const fmtP = p => (p*100 >= 1 ? (p*100).toFixed(0) : (p*100).toFixed(1)) + '%';
 function wbClaimed(ev){ const s = wbSave(); return s.claimed.includes(ev); }
 function wbClaim(ev, b){ const s = wbSave(); if (!s.claimed.includes(ev)) s.claimed.push(ev); while (s.claimed.length > 40) s.claimed.shift(); s.wins[b] = (s.wins[b] || 0) + 1; persist(); }
 function wbSave(){ if (!save.wb || typeof save.wb !== 'object') save.wb = {}; const s = save.wb; if (!Array.isArray(s.claimed)) s.claimed = []; if (!s.wins || typeof s.wins !== 'object') s.wins = {}; return s; }
@@ -25561,7 +25572,7 @@ function wbRewardList(b, w){ const dm = save.diff === 'nightmare' ? 2 : save.dif
     const btns = $('#resBtns'); btns.innerHTML = '';
     if (won && F.rew){ const R = F.rew, box = el('div', 'wbrew'); box.appendChild(el('b', null, 'World boss rewards'));
       const ul = el('div', 'wbrl'); for (const [ic, t] of [['coin', `${R.coins.toLocaleString()} coins`], ['scrap', `${R.scrap} ${MATS.scrap.name}`], ['essence', `${R.essence} ${MATS.essence.name}`], ['m_void', `${R.m_void} ${MATS.m_void.name}`], [R.mat[0], `${R.mat[1]} ${MATS[R.mat[0]].name}`], ['star', `${R.axp} Player XP`]]){ const d = el('span'); d.appendChild(icEl(ic)); d.append(' ' + t); ul.appendChild(d); }
-      box.appendChild(ul); if (!F.rare || !F.rare.length) box.appendChild(el('small', null, `No rare drop this time (${B.short}'s weapon 1% · Signature Power 0.5%).`)); btns.appendChild(box); }
+      box.appendChild(ul); if (!F.rare || !F.rare.length) box.appendChild(el('small', null, `No rare drop this time (${WB_LOOT[F.b].map(it => (it.kind === 'weapon' ? WPN[it.id].name : SIGM[it.id].name) + ' ' + fmtP(it.p)).join(' · ')}).`)); btns.appendChild(box); }
     const add = (label, cls, fn) => { const b = document.createElement('button'); b.className = 'btn ' + cls; b.textContent = label; b.addEventListener('click', fn); btns.appendChild(b); return b; };
     add('Home', 'alt', () => navHome());
     if (won && F.rare && F.rare.length) setTimeout(() => wbRareReveal(F.rare, B), 400);
@@ -25580,7 +25591,7 @@ function wbRareReveal(list, B){
 .wbreveal{position:fixed;inset:0;z-index:80;display:grid;place-items:center;background:rgba(5,3,15,.78);animation:wbfade .4s ease}.wbrc{width:min(92vw,420px);background:linear-gradient(160deg,#1C1550,#0B0826);border:3px solid var(--wbc);border-radius:20px;padding:18px;text-align:center;color:#fff;box-shadow:0 0 0 4px rgba(0,0,0,.4),0 0 60px var(--wbc);animation:wbpop .5s cubic-bezier(.2,1.6,.4,1)}.wbrc>small{display:block;font:900 12px Rubik,system-ui,sans-serif;letter-spacing:.2em;color:var(--wbc)}.wbri{display:flex;gap:12px;align-items:center;text-align:left;margin:14px 0}.wbric{width:64px;height:64px;flex:none;border-radius:14px;background:rgba(255,255,255,.08);display:grid;place-items:center}.wbric svg{width:56px;height:56px}.wbri b{display:block;font-size:18px}.wbri span{font-size:12px;opacity:.85}.wbrc p{font-size:12px;opacity:.75}
 @keyframes wbfade{from{opacity:0}}@keyframes wbpop{from{transform:scale(.6);opacity:0}}`; document.head.appendChild(s); }
 // weapon source text in the Locker / Codex
-{ const _ws = weaponSource; weaponSource = function(id){ const w = WPN[id]; if (w && w.boss && w.boss.startsWith('wb_')) return `World-boss exclusive: a 1% drop from ${BOSSES[w.boss].name} (one roll per event victory). Never sold, crafted or found anywhere else.`; return _ws.apply(this, arguments); }; }
+{ const _ws = weaponSource; weaponSource = function(id){ const w = WPN[id]; if (w && w.boss && w.boss.startsWith('wb_')) return `Secret · world-boss exclusive: a ${fmtP(wbLootOf(id).p)} drop from ${BOSSES[w.boss].name} (one roll per event victory). Never sold, crafted or found anywhere else.`; return _ws.apply(this, arguments); }; }
 
 // =====================================================================
 // WORLD BOSSES · the event: schedule, portal, map markers, HUD chip, announcements and entry.
@@ -25708,7 +25719,7 @@ function wbMapLayer(){
   if (!E.open){ info.textContent = `Next world boss portal: ${WB_BOSS[E.b].name} in ${OW_REGIONS[E.region].name}, opening in ${wbFmt(E.until)} (${wbLocalTime(E.start)}).`; return; }
   const tab = tabs[E.region]; if (tab){ const d = el('i', 'wbdot'); d.style.background = WB_BOSS[E.b].col; tab.appendChild(d); }
   const k = owMapRegion, open = owRegionOpen(E.region), B = WB_BOSS[E.b];
-  info.textContent = `World Boss portal open: ${B.name} in ${OW_REGIONS[E.region].name}${open ? '' : ' (locked for you)'} · closes in ${wbFmt(E.left)}.` + (k !== E.region ? ' Open that tab to see it.' : open ? ' Click the portal to set a guide arrow.' : '');
+  info.textContent = `World Boss portal open: ${B.name} in ${OW_REGIONS[E.region].name}${open ? '' : ' (locked for you)'} · closes in ${wbFmt(E.left)} · drops ${WB_LOOT[E.b].map(it => (it.kind === 'weapon' ? WPN[it.id].name : SIGM[it.id].name) + ' ' + fmtP(it.p)).join(', ')}.` + (k !== E.region ? ' Open that tab to see it.' : open ? ' Click the portal to set a guide arrow.' : '');
   if (k !== E.region || !cv) return;
   // overlay canvas over the map
   const box = cv.parentNode; if (getComputedStyle(box).position === 'static') box.style.position = 'relative'; const lay = document.createElement('canvas'); lay.className = 'wblay'; lay.width = cv.width; lay.height = cv.height; box.appendChild(lay);
@@ -25743,7 +25754,7 @@ function wbChip(){
   else lines = [['h', 'NEXT WORLD BOSS — ' + wbFmt(E.until)]];
   const sig = lines.map(l => l[1]).join('|');
   if (c._t !== sig){ c._t = sig; c.innerHTML = ''; for (const [k, t] of lines){ const d = document.createElement('span'); d.className = 'wbl wbl-' + k; d.textContent = t; c.appendChild(d); } }
-  c.style.setProperty('--wbc', E.open ? B.col : '#5A6275'); c.classList.toggle('open', !!E.open); c.classList.toggle('late', !!(E.open && E.left < 120e3));
+  c.style.setProperty('--wbc', E.open ? B.col : '#5A6275'); c.title = 'Possible drops: ' + WB_LOOT[E.b].map(it => (it.kind === 'weapon' ? WPN[it.id].name : SIGM[it.id].name) + ' ' + fmtP(it.p)).join(' · '); c.classList.toggle('open', !!E.open); c.classList.toggle('late', !!(E.open && E.left < 120e3));
   if (WB.guide && (!E.open || WB.guideEv !== E.ev)) WB.guide = false;
 }
 { const s = document.createElement('style'); s.textContent = `#wbChip{display:flex!important;flex-direction:column;align-items:flex-end;gap:1px;border-radius:12px!important;padding:5px 10px!important;max-width:250px!important;background:linear-gradient(180deg,rgba(43,38,86,.92),rgba(20,17,46,.92))!important}#wbChip:not(.open){border-radius:999px!important}.wbl{display:block;line-height:1.25}.wbl-h{color:#FFE07A;font-weight:900;letter-spacing:.06em}.wbl-n{color:var(--wbc);font-weight:900;font-size:11px}.wbl-r{color:#E6E0FF;font-size:10px}.wbl-t{color:#FFFFFF;font-size:11px}#wbChip.late .wbl-t{color:#FF9BA6}.wbl-g{color:#9BF6B0;font-size:10px}`; document.head.appendChild(s); }
@@ -25802,7 +25813,8 @@ setInterval(() => { try { wbAnnTick(); } catch(err){ console.error(err); } }, 10
 function wbPortalPanel(m, p){
   const E = p.E, B = p.B, done = wbClaimed(E.ev);
   owPanel(B.name, body => {
-    const head = el('div', 'owdun-head'); head.innerHTML = `<span class="owdi"></span><div><b></b><small></small></div>`; head.querySelector('.owdi').innerHTML = iconSVG(E.b === 'aeth' ? 'sp_heavenfall' : 'sp_siege'); head.querySelector('b').textContent = B.title + ' · World Boss'; head.querySelector('small').textContent = B.lore; body.appendChild(head);
+    const head = el('div', 'owdun-head'); head.innerHTML = `<span class="owdi"></span><div><b></b><small></small></div>`; head.querySelector('.owdi').innerHTML = iconSVG(E.b === 'aeth' ? 'sp_expanse' : 'sp_dominion'); head.querySelector('b').textContent = B.title + ' · World Boss'; head.querySelector('small').textContent = B.lore; body.appendChild(head);
+    body.appendChild(wbDropsEl(E.b, {w:OW_REGIONS[m.i].w}));
     const kv = el('div', 'owkv'); const row = (k, v) => { const x = el('div'); x.append(el('span', null, k), el('b', null, v)); kv.appendChild(x); return x; };
     row('Arena', B.arena);
     const cl = row('Portal closes', wbFmt(E.left));
@@ -25810,9 +25822,6 @@ function wbPortalPanel(m, p){
     row('Your gear', 'Your Locker loadout: weapons, armour, pets, relics and your equipped Signature Power');
     row('Fight', `Three phases and an ultimate (${B.ult}). ${Math.round(WB_FIGHT_DUR/60)} minutes before he withdraws.`);
     const R = wbRewardList(E.b, OW_REGIONS[m.i].w);
-    row('Rewards', `${R.coins.toLocaleString()} coins · ${R.scrap} ${MATS.scrap.name} · ${R.essence} ${MATS.essence.name} · ${R.m_void} ${MATS.m_void.name} · ${R.mat[1]} ${MATS[R.mat[0]].name} · ${R.axp} Player XP`);
-    const wid = E.b === 'aeth' ? 'celestialrupture' : 'tyrantsfang', sid = E.b === 'aeth' ? 's_heavenfall' : 's_siege';
-    row('Rare drops', `${WPN[wid].name} (weapon, 1%)${save.weapons.includes(wid) ? ' · owned' : ''} · ${SIGM[sid].name} (Signature Power, 0.5%)${save.sigs.includes(sid) ? ' · owned' : ''}`);
     row('Status', done ? 'Defeated: you already claimed this event. The next portal opens on the next half hour.' : 'Rewards available: one victory per event');
     body.appendChild(kv);
     const rowb = el('div', 'row owbtnrow');
@@ -25835,6 +25844,130 @@ function wbEnter(m, p, duo){
   if (duo){ DUO.pickW = null; DUO.wbNext = {b:E.b, ev:E.ev}; duoOffer(w, 10, false, launch); return; }
   launch();
 }
+
+// =====================================================================
+// WORLD BOSSES · what you are farming for: drop previews (portal panel, in the fight, event card), the Secret rarity's
+// look, the Locker Room (weapons + Domain Expansions, locked or owned) and the Secret reward reveal.
+// Every percentage shown here is read from WB_LOOT, the same table the rolls use.
+// =====================================================================
+const wbItemName = it => it.kind === 'weapon' ? WPN[it.id].name : SIGM[it.id].name;
+const wbItemIcon = it => it.kind === 'weapon' ? 'w_' + it.id : SIGM[it.id].icon;
+const wbItemType = it => it.kind === 'weapon' ? 'Secret Weapon' : 'Secret Domain Expansion';
+const wbOwns = it => it.kind === 'weapon' ? save.weapons.includes(it.id) : save.sigs.includes(it.id);
+// the drop list: rare items with icon, name, rarity, type, chance and owned/locked; then the rewards every victory gives
+function wbDropsEl(b, o={}){
+  const B = WB_BOSS[b], box = el('div', 'wbdrops'); box.style.setProperty('--wbc', B.col);
+  box.appendChild(el('b', 'wbdh', 'POSSIBLE DROPS'));
+  for (const it of WB_LOOT[b]){ const own = wbOwns(it), row = el('div', 'wbdr rsecret' + (own ? ' own' : ' lockd'));
+    const ic = el('span', 'wbdi'); ic.appendChild(icEl(wbItemIcon(it))); if (!own) ic.appendChild(el('i', 'wblock', '🔒')); row.appendChild(ic);
+    const tx = el('span', 'wbdt'); tx.appendChild(el('b', null, wbItemName(it))); tx.appendChild(el('small', null, wbItemType(it)));
+    row.appendChild(tx); row.appendChild(el('span', 'wbdp', fmtP(it.p))); row.appendChild(el('span', 'wbds', own ? '✓ Owned' : 'Locked'));
+    row.title = `${wbItemName(it)} · ${wbItemType(it)} · ${fmtP(it.p)} per victory · ${own ? 'you own it' : 'not unlocked yet'}`;
+    box.appendChild(row); }
+  const R = wbRewardList(b, o.w ?? 2), g = el('div', 'wbdg');
+  g.appendChild(el('small', null, 'Every victory (100%, once per event):'));
+  const chips = el('div', 'wbdc'); for (const [ic, t] of [['coin', `${R.coins.toLocaleString()} coins`], ['scrap', `${R.scrap} ${MATS.scrap.name}`], ['essence', `${R.essence} ${MATS.essence.name}`], ['m_void', `${R.m_void} ${MATS.m_void.name}`], [R.mat[0], `${R.mat[1]} ${MATS[R.mat[0]].name}`], ['star', `${R.axp} Player XP`]]){ const c = el('span'); c.appendChild(icEl(ic)); c.append(' ' + t); chips.appendChild(c); }
+  g.appendChild(chips); if (!o.noBase) box.appendChild(g);
+  return box;
+}
+// ---------- in the fight: a small "Possible drops" pill under the boss bar; tap/hover for details ----------
+function wbFightDrops(){
+  const bb = $('#bossbar'); if (!bb) return; let d = document.getElementById('wbFightDrops');
+  const on = run && run.wbFight && !bb.hidden && state === 'play';
+  if (!on){ if (d) d.remove(); return; }
+  if (d && d._b === run.wbFight.b) return;
+  if (d) d.remove();
+  const b = run.wbFight.b; d = el('div', 'wbfd'); d.id = 'wbFightDrops'; d._b = b; d.style.setProperty('--wbc', WB_BOSS[b].col);
+  const pill = el('button', 'wbfdp'); pill.setAttribute('aria-label', 'Possible drops'); pill.appendChild(el('span', 'wbfdl', 'Possible drops'));
+  for (const it of WB_LOOT[b]){ const s = el('span', 'wbfdi' + (wbOwns(it) ? ' own' : '')); s.appendChild(icEl(wbItemIcon(it))); s.appendChild(el('em', null, fmtP(it.p))); pill.appendChild(s); }
+  const det = wbDropsEl(b, {w:run.w}); det.classList.add('wbfdd');
+  pill.addEventListener('click', ev => { ev.stopPropagation(); d.classList.toggle('open'); });
+  d.append(pill, det); bb.after(d);
+}
+{ const _uh = updateHud; updateHud = function(){ const r = _uh.apply(this, arguments); try { wbFightDrops(); } catch(e){} return r; }; }
+// ---------- the Secret rarity's look ----------
+{ const s = document.createElement('style'); s.textContent = `
+.rsecret{position:relative;isolation:isolate;background:linear-gradient(135deg,#120A2E,#1E1150 45%,#2A0F3A) padding-box,conic-gradient(from var(--wba,0deg),#7B2CFF,#FFD27A,#3FE0D0,#FF5FA8,#7B2CFF) border-box!important;border:2px solid transparent!important;animation:wbspin 4s linear infinite}
+.rsecret::after{content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;background:radial-gradient(circle at 20% 15%,rgba(255,210,122,.18),transparent 40%),radial-gradient(circle at 85% 80%,rgba(155,123,255,.22),transparent 45%);z-index:-1}
+@property --wba{syntax:'<angle>';inherits:false;initial-value:0deg}@keyframes wbspin{to{--wba:360deg}}
+.rsecret.locked,.rsecret.lockd{filter:saturate(.75)}
+.tag.rsecret,.tag.secret{color:#FFF6E0!important;text-shadow:0 0 6px rgba(255,210,122,.6)}
+.wlock{position:absolute;right:6px;top:6px;font-size:13px;filter:drop-shadow(0 1px 0 #000)}
+.witem.locked.rsecret .we,.scard.locked.rsecret .sic>span{filter:brightness(.45) saturate(.6)}
+.wbdrops{background:rgba(10,8,30,.6);border:2px solid var(--line);border-radius:14px;padding:8px 10px;margin:8px 0;display:flex;flex-direction:column;gap:6px}
+.wbdh{font:900 11px Rubik,system-ui,sans-serif;letter-spacing:.14em;color:#FFE07A}
+.wbdr{display:grid;grid-template-columns:42px 1fr auto auto;gap:8px;align-items:center;border-radius:12px;padding:5px 8px}
+.wbdi{position:relative;width:42px;height:42px;display:grid;place-items:center}.wbdi svg{width:38px;height:38px}.wbdr.lockd .wbdi svg{filter:brightness(.55) saturate(.7)}
+.wblock{position:absolute;right:-2px;bottom:-2px;font-style:normal;font-size:12px}
+.wbdt b{display:block;color:#fff;font-size:14px}.wbdt small{color:#C9A2FF;font-weight:800;font-size:11px;letter-spacing:.06em;text-transform:uppercase}
+.wbdp{font:900 16px Rubik,system-ui,sans-serif;color:#FFE07A}.wbds{font-size:11px;font-weight:800;color:#E6E0FF;opacity:.85}.wbdr.own .wbds{color:#9BF6B0}
+.wbdg small{color:#E6E0FF;opacity:.85}.wbdc{display:flex;flex-wrap:wrap;gap:4px 10px;font:700 12px Rubik,system-ui,sans-serif;color:#fff}.wbdc span{display:inline-flex;align-items:center;gap:3px}.wbdc svg{width:16px;height:16px}
+.wbfd{position:relative;display:flex;flex-direction:column;align-items:center;margin-top:4px;pointer-events:auto;z-index:6}
+.wbfdp{display:inline-flex;align-items:center;gap:6px;background:rgba(10,8,30,.78);border:2px solid var(--wbc);border-radius:999px;padding:2px 8px 2px 10px;color:#fff;cursor:pointer;font:800 11px Rubik,system-ui,sans-serif}
+.wbfdl{opacity:.85;letter-spacing:.04em}.wbfdi{display:inline-flex;align-items:center;gap:2px}.wbfdi svg{width:20px;height:20px}.wbfdi:not(.own) svg{filter:brightness(.6)}.wbfdi em{font-style:normal;color:#FFE07A;font-weight:900}
+.wbfdd{display:none;position:absolute;top:calc(100% + 4px);width:min(360px,92vw);box-shadow:0 6px 24px rgba(0,0,0,.5)}
+.wbfd.open .wbfdd{display:flex}@media (hover:hover){.wbfd:hover .wbfdd{display:flex}}
+@media (max-width:520px){.wbdr{grid-template-columns:36px 1fr auto;}.wbds{grid-column:2/4;justify-self:start}.wbfdl{display:none}}
+`; document.head.appendChild(s); }
+// mark Secret entries wherever the Locker draws them (weapons grid, weapon detail, Powers cards)
+function wbMarkSecret(root){
+  if (!root) return;
+  root.querySelectorAll('.witem').forEach(b => { const n = b.querySelector('b'); const id = n && WIDS.find(w => WPN[w].name === n.textContent); if (!id || WPN[id].rarity !== 'secret') return; b.classList.add('rsecret');
+    if (!save.weapons.includes(id) && !b.querySelector('.wlock')) b.appendChild(el('i', 'wlock', '🔒'));
+    const sm = b.querySelector('small'); if (sm && !save.weapons.includes(id)) sm.textContent = `Secret · ${fmtP(wbLootOf(id).p)} · ${WB_BOSS[wbLootOf(id).b].short}`; });
+  root.querySelectorAll('.wdetail .tag, .stx .tag').forEach(t => { if (/^Secret/.test(t.textContent)) t.classList.add('rsecret'); });
+  root.querySelectorAll('.scard').forEach(c => { const n = c.querySelector('.stx > b'); const s = n && SIGS.find(x => x.name === n.textContent); if (!s || s.rarity !== 'secret') return; c.classList.add('rsecret'); if (!save.sigs.includes(s.id) && !c.querySelector('.wlock')) c.appendChild(el('i', 'wlock', '🔒')); });
+}
+{ const _rl = renderLocker; renderLocker = function(){ const r = _rl.apply(this, arguments); try { wbMarkSecret(document.getElementById('lockBody') || document); } catch(e){ console.error(e); } return r; }; }
+// the weapon showcase canvas: a dark iridescent backdrop with violet and gold motes for Secret weapons
+{ const _wi = weaponIdle; weaponIdle = function(c, s, id, now){ const wd = WPN[id]; if (!wd || wd.rarity !== 'secret') return _wi.apply(this, arguments);
+    c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, s, s);
+    const g = c.createRadialGradient(s/2, s/2, 0, s/2, s/2, s*0.7); g.addColorStop(0, '#2A1A5E'); g.addColorStop(0.6, '#120A2E'); g.addColorStop(1, '#05030F'); c.fillStyle = g; c.fillRect(0, 0, s, s);
+    c.save(); c.translate(s/2, s/2); c.rotate(now*0.35); for (let i=0;i<16;i++){ c.rotate(TAU/16); c.fillStyle = ['rgba(123,44,255,.22)', 'rgba(255,210,122,.2)', 'rgba(63,224,208,.18)', 'rgba(255,95,168,.18)'][i % 4]; c.beginPath(); c.moveTo(0, 0); c.lineTo(s*0.7, -s*0.05); c.lineTo(s*0.7, s*0.05); c.closePath(); c.fill(); } c.restore();
+    for (let i=0;i<22;i++){ const a = now*0.7 + i/22*TAU, rr = s*(0.26 + 0.09*Math.sin(now*1.7 + i)); c.fillStyle = i % 2 ? '#FFD27A' : '#B98CFF'; c.globalAlpha = 0.5 + 0.5*Math.sin(now*3 + i); circle(c, s/2 + Math.cos(a)*rr, s/2 + Math.sin(a)*rr, s*0.012); c.fill(); } c.globalAlpha = 1;
+    const own = save.weapons.includes(id), bob = Math.sin(now*2)*s*0.03; c.save(); c.translate(s/2, s/2 + bob); c.rotate(Math.sin(now*1.5)*0.1); if (!own) c.filter = 'brightness(0.45) saturate(0.6)'; drawIcon(c, wd.icon, 0, s*0.01, s*0.62); c.restore();
+    if (!own){ c.font = `${Math.round(s*0.12)}px system-ui`; c.textAlign = 'center'; c.fillText('🔒', s*0.84, s*0.2); } }; }
+// ---------- Locker → Powers: "Domain Expansions" filter (renamed) and a rarity filter ----------
+let WB_PRAR = 'all';
+{ const _rp = renderPowersTab; renderPowersTab = function(body){ const r = _rp.apply(this, arguments);
+    try { body.querySelectorAll('.wbpf .tab').forEach(t => { if (t.textContent === 'Domains') t.textContent = 'Domain Expansions'; });
+      body.querySelectorAll('.wbdtag').forEach(t => t.textContent = 'DOMAIN EXPANSION');
+      const bar = body.querySelector('.wbpf'); if (bar){ const sel = el('select', 'sel wbprar'); sel.setAttribute('aria-label', 'Rarity'); for (const k of ['all', ...RORDER.slice().reverse().filter(k => SIGS.some(s => s.rarity === k))]){ const o = el('option', null, k === 'all' ? 'Rarity: all' : 'Rarity: ' + RAR[k].name); o.value = k; if (k === WB_PRAR) o.selected = true; sel.appendChild(o); } sel.addEventListener('change', () => { WB_PRAR = sel.value; renderLocker(); }); bar.appendChild(sel); }
+      if (WB_PRAR !== 'all') body.querySelectorAll('.scard').forEach(c => { const n = c.querySelector('.stx > b'); const s = n && SIGS.find(x => x.name === n.textContent); if (s && s.rarity !== WB_PRAR) c.remove(); });
+      body.querySelectorAll('.scard').forEach(c => { const n = c.querySelector('.stx > b'); const s = n && SIGS.find(x => x.name === n.textContent); if (!s || !s.domain) return; const t = c.querySelector('.stx'); if (t && !t.querySelector('.wbsrc')){ const L = wbLootOf(s.id); t.appendChild(el('small', 'src wbsrc', `Type: Domain Expansion Power · Source: ${WB_BOSS[L.b].short}`)); } });
+    } catch(e){ console.error(e); }
+    return r; }; }
+{ const s = document.createElement('style'); s.textContent = `.wbpf{display:flex;flex-wrap:wrap;gap:6px;align-items:center}.wbprar{margin-left:auto}`; document.head.appendChild(s); }
+// ---------- the Secret reward reveal (shown on the results screen, never mid-combat; tap or Skip to close) ----------
+if (typeof AU !== 'undefined' && AU.def){
+  AU.def('wb_secret_w', () => AD.mix(AD.buf(3.2).length, [AS.sines(2.4, [523, 659, 784, 1046], 0.9, 0.09), 0.3], [AS.sines(2.2, [1568, 2093, 2637], 0.7, 0.12), 0.12, 0.5], [AS.thump(80, 35, 0.3, 1.2, 1), 0.7], [WBA.crystal(1.6, 2600, 301), 0.18, 0.6]), {peak:0.9});
+  AU.def('wb_secret_d', () => AD.mix(AD.buf(3.6).length, [WBA.suck(0.8, 311, 5000, 600), 0.3], [AS.thump(60, 26, 0.5, 1.8, 1), 1, 0.75], [AS.sines(2.6, [392, 587, 784, 1175], 1.0, 0.1), 0.25, 0.8], [WBA.crystal(1.8, 1400, 312), 0.16, 0.9]), {peak:0.9});
+}
+wbRareReveal = function(list, B){
+  document.querySelectorAll('.wbreveal').forEach(x => x.remove());
+  const ov = el('div', 'wbreveal wbsec'); const card = el('div', 'wbrc rsecret'); card.style.setProperty('--wbc', B.col); ov.appendChild(card);
+  for (let i=0;i<28;i++){ const p = el('i', 'wbmote'); p.style.left = (Math.random()*100) + '%'; p.style.animationDelay = (Math.random()*2.4) + 's'; p.style.background = i % 2 ? '#FFD27A' : '#B98CFF'; ov.appendChild(p); }
+  card.appendChild(el('small', 'wbsecw', 'SECRET'));
+  for (const it of list){ const isW = it.kind === 'weapon', row = el('div', 'wbri' + (isW ? '' : ' dom'));
+    const ic = el('div', 'wbric'); ic.appendChild(icEl(isW ? 'w_' + it.id : SIGM[it.id].icon)); row.appendChild(ic);
+    const tx = el('div'); tx.appendChild(el('span', 'wbrt', isW ? 'SECRET WEAPON' : 'SECRET DOMAIN EXPANSION')); tx.appendChild(el('b', null, isW ? WPN[it.id].name : SIGM[it.id].name)); tx.appendChild(el('span', null, isW ? WPN[it.id].ability : SIGM[it.id].desc)); row.appendChild(tx); card.appendChild(row); }
+  card.appendChild(el('p', null, list.some(i => i.kind === 'weapon') ? 'Set it as your starting weapon in the Locker Room.' : 'Equip it in Locker Room → Powers. It uses your normal Power button.'));
+  const ok = el('button', 'btn', 'Claim'); const close = () => ov.remove(); ok.addEventListener('click', close); ov.addEventListener('click', e => { if (e.target === ov) close(); }); card.appendChild(ok);
+  document.body.appendChild(ov); setTimeout(() => ok.focus({preventScroll:true}), 50);
+  try { wbSfx(list.some(i => i.kind !== 'weapon') ? 'wb_secret_d' : 'wb_secret_w', {bus:'ui', vol:0.9, pri:5}); } catch(e){}
+};
+{ const s = document.createElement('style'); s.textContent = `.wbsec{background:radial-gradient(circle at 50% 40%,rgba(60,30,130,.85),rgba(5,3,15,.92))!important;overflow:hidden}
+.wbsec .wbrc{background:linear-gradient(160deg,#1C1550,#0B0826) padding-box,conic-gradient(from var(--wba,0deg),#7B2CFF,#FFD27A,#3FE0D0,#FF5FA8,#7B2CFF) border-box!important;border:3px solid transparent!important}
+.wbsecw{font-size:22px!important;letter-spacing:.5em!important;color:#FFE07A!important;text-shadow:0 0 14px rgba(255,210,122,.8),0 0 30px rgba(155,123,255,.7);animation:wbpulse 1.6s ease-in-out infinite}
+@keyframes wbpulse{50%{text-shadow:0 0 22px rgba(255,210,122,1),0 0 44px rgba(155,123,255,.9)}}
+.wbrt{display:block!important;font:900 11px Rubik,system-ui,sans-serif!important;letter-spacing:.12em;color:#C9A2FF;opacity:1!important}
+.wbsec .wbric{width:84px!important;height:84px!important;background:radial-gradient(circle,#3B2385,#120A2E)!important;box-shadow:0 0 24px rgba(155,123,255,.6)}.wbsec .wbric svg{width:74px!important;height:74px!important}
+.wbri.dom .wbric{animation:wbdom 2.4s ease-in-out infinite}@keyframes wbdom{50%{box-shadow:0 0 40px rgba(63,224,208,.8),0 0 70px rgba(224,40,60,.4)}}
+.wbmote{position:absolute;bottom:-10px;width:5px;height:5px;border-radius:50%;opacity:.8;animation:wbrise 3s linear infinite;pointer-events:none}@keyframes wbrise{to{transform:translateY(-110vh);opacity:0}}`; document.head.appendChild(s); }
+// the event card names the rare drops too
+{ const _wc = wbCall; wbCall = function(E){ const r = _wc.apply(this, arguments); try { const sm = document.querySelector('.wbcall small'); if (sm) sm.textContent += ' · Drops: ' + WB_LOOT[E.b].map(it => `${wbItemName(it)} ${fmtP(it.p)}`).join(' · '); } catch(e){} return r; }; }
+// the weapon detail's "upgrade levels" line describes what these two actually do per level
+{ const _wx = wExtraLabel; wExtraLabel = function(wd){ if (wd && wd.__id === 'celestialrupture') return 'Lv2 bigger core · Lv3 longer trail · Lv4 gravity drag · Lv5 huge burst'; if (wd && wd.__id === 'tyrantsfang') return 'Lv2 double slash · Lv3 wider arcs · Lv4 several targets · Lv5 rapid combos'; return _wx.apply(this, arguments); }; }
 
 // =====================================================================
 // MULTIPLAYER · developer network diagnostics. Toggle with F8 (or open the game with ?netdbg=1).
