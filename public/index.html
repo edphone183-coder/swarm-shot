@@ -26863,6 +26863,221 @@ function objHud(){ let el = document.getElementById('objChip'); const O = OBJ.cu
   const sig = O.k + p; if (el._s === sig) return; el._s = sig; el.style.setProperty('--oc', D.col); el.innerHTML = '<b></b>'; el.querySelector('b').textContent = D.name; el.appendChild(document.createTextNode(p)); }
 
 // =====================================================================
+// CHALLENGES · voluntary difficulty modifiers + optional Feats
+//  - Challenge modifiers (the game already had five on the Worlds screen) now also sit on every dungeon panel,
+//    plus two new ones: Faster attacks and More hazards. Each modifier on: +10% Player XP and materials (as
+//    before) and now also +8% coins.
+//  - Feats: optional goals for experienced players. Tracked automatically during dungeon runs. First completion
+//    pays a big reward; after that a smaller reward once per run.
+// =====================================================================
+CHAL.push(
+  {id:'quick',  name:'Faster attacks', icon:'bolt', desc:'Enemy shooters and bosses attack 25% more often'},
+  {id:'hazard', name:'More hazards',   icon:'flame', desc:'Region hazards (spores, lava, ice, lasers...) come 60% more often'});
+const CHAL_COIN = 0.08;
+// coin bonus for each modifier
+{ const _gc = gainCoins; gainCoins = function(v, raw){ if (!raw && run && run.chal && run.chal.length && inRun() && !run.training) v *= 1 + CHAL_COIN*run.chal.length; return _gc.call(this, v, raw); }; }
+// Faster attacks + More hazards
+{ const _up = update; update = function(dt){ const r = _up.apply(this, arguments);
+    try { if (run && state === 'play' && run.chal && run.chal.length){
+        if (chal('quick')) for (const e of enemies){ if (e.dead || e.mir || e.frozen > 0 || e.rootT > 0) continue; if (e.attacks) e.atkT -= dt*0.25; else if (e.beh === 'shoot') e.shootT -= dt*0.25; }
+      } } catch(err){}
+    return r; }; }
+{ const _hz = hazardTick; hazardTick = function(dt){ if (run && chal('hazard')) run.hazT -= dt*0.6; return _hz.apply(this, arguments); }; }
+// the Worlds-screen row text and a reusable chip row for the dungeon panel
+function chalRowInto(host, after){
+  host.innerHTML = ''; const n = CHAL.filter(c => save.chal[c.id]).length;
+  host.appendChild(el('small', 'chalh', n ? `${n} on · +${n*10}% Player XP and materials, +${Math.round(n*CHAL_COIN*100)}% coins` : 'Optional: harder runs, better rewards (+10% Player XP and materials, +8% coins each)'));
+  for (const c of CHAL){ const on = !!save.chal[c.id], b = el('button', 'chalb' + (on ? ' on' : '')); b.appendChild(icEl(c.icon)); b.append(c.name); b.title = c.desc; b.setAttribute('aria-pressed', on); b.dataset.chal = c.id;
+    b.addEventListener('click', () => { save.chal[c.id] = !on; persist(); chalRowInto(host, after); beep(on ? 500 : 800, 0.06, 'triangle', 0.03); if (after) after(); }); host.appendChild(b); }
+  const d = el('small', 'chald'); d.textContent = CHAL.filter(c => save.chal[c.id]).map(c => c.desc).join(' · '); if (n) host.appendChild(d);
+}
+renderChal = function(){ const host = $('#chalRow'); if (host) chalRowInto(host); };
+
+// ---------- Feats ----------
+const FEATS = [
+  {id:'untouch', name:'Untouchable',    icon:'shield', desc:'Go 60 seconds in a dungeon stage without taking damage',         c:250, s:4},
+  {id:'gaunt',   name:'Elite Gauntlet', icon:'crown',  desc:'Defeat 12 elite enemies in one run',                            c:400, s:6},
+  {id:'swift',   name:'Swift Slayer',   icon:'skull',  desc:'Defeat a stage-10 dungeon boss within 60 seconds of it appearing', c:600, s:10},
+  {id:'lean',    name:'Lean Arsenal',   icon:'sword',  desc:'Defeat a stage-10 dungeon boss carrying 2 weapons or fewer',   c:700, s:10},
+  {id:'heat',    name:'Feel the Heat',  icon:'flame',  desc:'Clear a dungeon stage with 3 or more challenge modifiers on',   c:500, s:8},
+  {id:'dark',    name:'Into the Dark',  icon:'hole',   desc:'Clear a dungeon stage with corruption at 90% or higher',        c:500, s:8},
+];
+const FT = {lastHp:null, hitT:0};
+function featsSave(){ if (!save.feats || typeof save.feats !== 'object') save.feats = {}; return save.feats; }
+function featOk(){ return run && !run.training && !run.arena && !(typeof duoGuest === 'function' && duoGuest()) && !(typeof tutActive === 'function' && tutActive()); }
+function featDone(id){
+  if (!featOk()) return; run.featsDone = run.featsDone || {}; if (run.featsDone[id]) return; run.featsDone[id] = true;
+  const f = FEATS.find(x => x.id === id); if (!f) return; const fs = featsSave(), first = !fs[id];
+  fs[id] = (fs[id] || 0) + 1;
+  const coins = first ? f.c : Math.round(f.c*0.25), scrap = first ? f.s : Math.max(1, Math.round(f.s*0.25));
+  gainCoins(coins, true); addMat('scrap', scrap, true); if (first) addAXP(120, 'feat');
+  persist();
+  toast(f.icon, (first ? 'FEAT COMPLETE: ' : 'Feat repeated: ') + f.name, `+${coins} coins, +${scrap} Scrap` + (first ? ', +120 Player XP' : ''));
+  try { if (P){ ring(P.x, P.y, 120*S, '#FFE07A', 0.5); if (!fxLow()) burst(P.x, P.y, '#FFE07A', 18, 1.1); } } catch(err){}
+  try { beep(784, 0.12, 'triangle', 0.05); beep(1046, 0.12, 'triangle', 0.05, null, 0.1); beep(1318, 0.3, 'triangle', 0.05, null, 0.2); } catch(err){}
+}
+{ const _ss = startStage; startStage = function(){ const r = _ss.apply(this, arguments); FT.lastHp = null; FT.hitT = run ? run.t : 0; return r; }; }
+{ const _up = update; update = function(dt){ const r = _up.apply(this, arguments);
+    try { if (run && P && state === 'play'){
+        if (FT.lastHp != null && P.hp < FT.lastHp - 0.01) FT.hitT = run.t;
+        FT.lastHp = P.hp;
+        if (run.t - FT.hitT >= 60 && featOk()) featDone('untouch');
+      } } catch(err){}
+    return r; }; }
+{ const _sm = spawnMob; spawnMob = function(role, o){ const e = _sm.apply(this, arguments); try { if (e && run) e.ftBorn = run.t; } catch(err){} return e; }; }
+{ const _ke = killEnemy; killEnemy = function(e){ const was = e && e.dead; const r = _ke.apply(this, arguments);
+    try { if (e && !was && e.dead && run && !e.mir){
+        if (e.elite){ run.featElites = (run.featElites || 0) + 1; if (run.featElites >= 12) featDone('gaunt'); }
+        if (e.role === 'boss' && !e.xb && !run.endless && run.stage === 10){
+          if (e.ftBorn != null && run.t - e.ftBorn <= 60) featDone('swift');
+          if (run.weapons && run.weapons.length <= 2) featDone('lean'); } } } catch(err){}
+    return r; }; }
+{ const _sc = stageClear; stageClear = function(){ const ok = state === 'play' && run && !run.arena && !run.cleared; const r = _sc.apply(this, arguments);
+    try { if (ok){ if ((run.chal || []).length >= 3) featDone('heat'); if (run.corr >= 90) featDone('dark'); } } catch(err){}
+    return r; }; }
+function featsBox(){
+  const fs = featsSave(), box = el('div', 'featbox'), n = FEATS.filter(f => fs[f.id]).length;
+  box.appendChild(el('small', 'chalh', `Feats: ${n} / ${FEATS.length} complete · optional goals, tracked automatically in dungeon runs`));
+  for (const f of FEATS){ const r = el('div', 'featrow' + (fs[f.id] ? ' done' : '')); r.dataset.feat = f.id; const ic = el('span', 'featic'); ic.appendChild(icEl(fs[f.id] ? 'check' : f.icon));
+    const t = el('div'); t.append(el('b', null, f.name), el('small', null, f.desc));
+    r.append(ic, t, el('span', 'featrw', fs[f.id] ? `Done ×${fs[f.id]}` : `${f.c} coins · ${f.s} Scrap`)); box.appendChild(r); }
+  return box;
+}
+// dungeon panel: modifiers + feats below the difficulty picker
+{ const _dp = owDungeonPanel; owDungeonPanel = function(m){ const r = _dp.apply(this, arguments);
+    try { const body = $('#owPanel .owpb'), ds = body && body.querySelector('.owdiff'); if (ds && !body.querySelector('.owchal')){
+        const h = el('h4', 'owsub', 'Challenge modifiers'), host = el('div', 'chalrow owchal'); chalRowInto(host);
+        const det = el('details', 'owfeats'); det.appendChild(el('summary', null, 'Feats (optional goals)')); det.appendChild(featsBox());
+        ds.after(h, host, det); } } catch(err){ console.error(err); }
+    return r; }; }
+{ const st = document.createElement('style'); st.textContent = `
+.chald{display:block; width:100%; color:var(--muted); font-size:12px; margin-top:2px}
+.owchal{justify-content:flex-start} .owchal .chalh{width:100%; text-align:left}
+.owfeats{margin:8px 0; padding:6px 10px; border-radius:12px; background:rgba(8,6,26,.25); border:2px solid var(--line)}
+.owfeats summary{cursor:pointer; font-weight:700}
+.featbox{display:flex; flex-direction:column; gap:6px; margin-top:6px}
+.featrow{display:grid; grid-template-columns:30px 1fr auto; gap:8px; align-items:center; padding:6px 8px; border-radius:10px; background:var(--panel2)}
+.featrow small{display:block; color:var(--muted)} .featrow .featrw{font-size:12px; color:#FFE07A; text-align:right}
+.featrow.done{opacity:.8} .featrow.done .featic{color:#5BD66B}
+.featic{display:grid; place-items:center} .featic svg,.featic .icw{width:22px; height:22px}`; document.head.appendChild(st); }
+
+// =====================================================================
+// GRAPHICS QUALITY PRESETS · Low / Medium / High (Settings, top row)
+//  Low:    decorative particles low, environment animation reduced, canvas resolution 1x, particle cap 120,
+//          simplified enemy shading always.
+//  Medium: full particles but capped at 240, environment animation full, canvas resolution up to 1.5x,
+//          simplified enemy shading once a fight passes 45 enemies.
+//  High:   everything on, canvas resolution up to 2x (the old default).
+//  Gameplay warnings (attack telegraphs, hazard zones, enemy projectiles, boss warnings) are drawn the same way
+//  on every preset: the presets only touch decorative particles, ambient motion, shading detail and resolution.
+//  Changing Particles / Environment animation by hand afterwards shows the preset as "Custom".
+// =====================================================================
+const GFX = {
+  low:    {name:'Low',    particles:'low',  envAnim:'reduced', dpr:1,   cap:120, lod:0},
+  medium: {name:'Medium', particles:'high', envAnim:'full',    dpr:1.5, cap:240, lod:45},
+  high:   {name:'High',   particles:'high', envAnim:'full',    dpr:2,   cap:0,   lod:80},
+};
+if (!SET.gfx) SET.gfx = SET.particles === 'low' ? 'low' : 'high';
+const gfxP = () => GFX[SET.gfx] || GFX.high;
+function gfxCustom(){ const g = GFX[SET.gfx]; return !g || g.particles !== SET.particles || g.envAnim !== (SET.envAnim || 'full'); }
+function gfxApply(k){ const g = GFX[k]; if (!g) return; SET.gfx = k; SET.particles = g.particles; SET.envAnim = g.envAnim; saveSettings(); resize(); }
+// canvas resolution cap
+{ const _rs = resize; resize = function(){ const r = _rs.apply(this, arguments);
+    try { const cap = gfxP().dpr, want = Math.min(window.devicePixelRatio || 1, cap);
+      if (Math.abs(want - dpr) > 0.01){ dpr = want; cv.width = Math.round(W*dpr); cv.height = Math.round(H*dpr); ctx.setTransform(dpr,0,0,dpr,0,0); bgCache = null; } } catch(err){}
+    return r; };
+  addEventListener('resize', () => resize()); }
+// particle cap (oldest decorative particles go first)
+{ const _up = update; update = function(dt){ const r = _up.apply(this, arguments);
+    try { const cap = gfxP().cap; if (cap && parts.length > cap) parts.splice(0, parts.length - cap); } catch(err){}
+    return r; }; }
+// simplified enemy shading in big fights (earlier on Medium)
+{ const _bg = fxBulletGlows; fxBulletGlows = function(){ const r = _bg.apply(this, arguments); try { if (run && SET.gfx === 'medium' && enemies.length > GFX.medium.lod) ART_LOD = true; } catch(err){} return r; }; }
+// settings row
+{ const _rs = renderSettings; renderSettings = function(){ const r = _rs.apply(this, arguments);
+    try { const box = $('#setBody'); if (!box || box.querySelector('.gfxrow')) return r;
+      const d = el('div', 'setrow gfxrow'), t = el('div'); const cust = gfxCustom();
+      t.append(el('b', null, 'Graphics quality'), el('small', null, (cust ? 'Custom (you changed a setting below). ' : '') + 'Low: fewer particles, calmer scenery, lower resolution (smoothest). Medium: balanced. High: full effects. Attack warnings always show.'));
+      d.appendChild(t); const g = el('div', 'diff');
+      for (const k of ['low', 'medium', 'high']){ const on = !cust && SET.gfx === k, b = el('button', 'tab' + (on ? ' on' : ''), GFX[k].name); b.dataset.gfx = k; b.setAttribute('aria-pressed', on); b.addEventListener('click', () => { gfxApply(k); renderSettings(); }); g.appendChild(b); }
+      d.appendChild(g); box.prepend(d); } catch(err){ console.error(err); }
+    return r; }; }
+
+// =====================================================================
+// EVOLUTION / FUSION REVEALS · the existing card animation (two icons slide together, flash, new icon) now has
+//  a live effects layer behind it:
+//   1. each ingredient icon glows in its own colour and streams sparks of that colour,
+//   2. the two streams spiral into the centre and mix,
+//   3. at the merge: double shockwave, mixed-colour spark burst and turning light rays behind the new icon,
+//   4. motes keep orbiting the result until you press the button.
+//  Back in the arena the player gets a short aura in the new weapon's colours.
+//  Reduced motion: a still glow only. Low graphics: a third of the particles.
+// =====================================================================
+const RVL = {cv:null, raf:0, t0:0, cols:['#FFC83D', '#38D6F5'], ps:[], merged:false, fusion:false, aura:null};
+function rvlCols(ev){
+  try { const [a, b] = ev.parts;
+    if (ev.fusion) return [(WPN[a] || {}).col || '#FF8A1E', (WPN[b] || {}).col || '#38D6F5'];
+    const rc = id => { const u = UP[id[0]]; return (u && RAR[u.rarity] && RAR[u.rarity].col) || null; };
+    const A = rc(a) || '#FFC83D', B = rc(b) || '#FF5FA8'; return A === B ? [A, '#FFFFFF'] : [A, B]; } catch(err){ return ['#FFC83D', '#38D6F5']; }
+}
+function rvlCanvas(){
+  if (RVL.cv && RVL.cv.isConnected) return RVL.cv; const ov = $('#evoOv'); if (!ov) return null;
+  const c = document.createElement('canvas'); c.id = 'evoFx'; c.setAttribute('aria-hidden', 'true'); ov.prepend(c); RVL.cv = c; return c;
+}
+function rvlStart(ev){
+  const cv = rvlCanvas(); if (!cv) return; cancelAnimationFrame(RVL.raf);
+  RVL.cols = rvlCols(ev); RVL.fusion = !!ev.fusion; RVL.ps = []; RVL.merged = false; RVL.t0 = performance.now();
+  const A = $('#evoA'), B = $('#evoB'); if (A) A.style.boxShadow = `0 0 26px ${RVL.cols[0]}, 0 0 8px ${RVL.cols[0]} inset`; if (B) B.style.boxShadow = `0 0 26px ${RVL.cols[1]}, 0 0 8px ${RVL.cols[1]} inset`;
+  RVL.aura = {cols:RVL.cols.slice(), pending:true};
+  const loop = () => { if (state !== 'evo' || !cv.isConnected || $('#evoOv').hidden){ RVL.raf = 0; return; } rvlFrame(cv); RVL.raf = requestAnimationFrame(loop); };
+  RVL.raf = requestAnimationFrame(loop);
+}
+function rvlFrame(cv){
+  const ov = cv.parentElement, w = ov.clientWidth, h = ov.clientHeight, d = Math.min(window.devicePixelRatio || 1, 2);
+  if (cv.width !== Math.round(w*d) || cv.height !== Math.round(h*d)){ cv.width = Math.round(w*d); cv.height = Math.round(h*d); }
+  const c = cv.getContext('2d'); c.setTransform(d, 0, 0, d, 0, 0); c.clearRect(0, 0, w, h);
+  const st = $('#evoStage'); if (!st) return; const sr = st.getBoundingClientRect(), orr = ov.getBoundingClientRect();
+  const cx = sr.left - orr.left + sr.width/2, cy = sr.top - orr.top + sr.height/2, t = (performance.now() - RVL.t0)/1000;
+  const low = SET.particles === 'low', [cA, cB] = RVL.cols, M = 0.95;
+  if (reduce){ const g = c.createRadialGradient(cx, cy, 10, cx, cy, 160); g.addColorStop(0, cA + '88'); g.addColorStop(0.5, cB + '33'); g.addColorStop(1, 'transparent'); c.fillStyle = g; c.fillRect(cx - 170, cy - 170, 340, 340); return; }
+  // 1-2: streams from each icon spiralling to the centre
+  if (t < M){ const k = t/M, slide = Math.max(0, (k - 0.7)/0.3), xo = 120*(1 - slide*slide);
+    for (const [side, col] of [[-1, cA], [1, cB]]){ const n = low ? 1 : 3; for (let i=0;i<n;i++){ const a = Math.random()*TAU, r = 30 + Math.random()*16;
+        RVL.ps.push({x:cx + side*xo + Math.cos(a)*r, y:cy + Math.sin(a)*r, vx:0, vy:0, col, life:0.7, t:0, s:2 + Math.random()*2.5, home:true, sp:side}); } } }
+  if (t >= M && !RVL.merged){ RVL.merged = true;
+    const n = low ? 30 : 90; for (let i=0;i<n;i++){ const a = Math.random()*TAU, v = 120 + Math.random()*420; RVL.ps.push({x:cx, y:cy, vx:Math.cos(a)*v, vy:Math.sin(a)*v, col:i % 3 === 2 ? '#FFFFFF' : i % 2 ? cA : cB, life:0.6 + Math.random()*0.6, t:0, s:2 + Math.random()*3.5}); } }
+  // 3: rays + shockwaves
+  if (t >= M){ const k = Math.min(1, (t - M)/0.5);
+    c.save(); c.translate(cx, cy); c.rotate(t*0.5); c.globalCompositeOperation = 'lighter';
+    const R = 150 + 40*Math.sin(t*2); for (let i=0;i<12;i++){ c.rotate(TAU/12); c.fillStyle = (i % 2 ? cA : cB) + '30'; c.beginPath(); c.moveTo(0, 0); c.lineTo(R*k, -14); c.lineTo(R*k, 14); c.closePath(); c.fill(); }
+    c.restore();
+    for (const [dl, col] of [[0, cA], [0.12, cB]]){ const q = (t - M - dl)/0.7; if (q > 0 && q < 1){ c.save(); c.globalAlpha = 1 - q; c.strokeStyle = col; c.lineWidth = 6*(1 - q) + 1; c.beginPath(); c.arc(cx, cy, 40 + q*230, 0, TAU); c.stroke(); c.restore(); } }
+    // 4: orbiting motes
+    if (!low || Math.random() < 0.4){ const a = Math.random()*TAU; RVL.ps.push({x:cx + Math.cos(a)*90, y:cy + Math.sin(a)*90, orb:a, rr:90, col:Math.random() < 0.5 ? cA : cB, life:1.6, t:0, s:1.6 + Math.random()*1.6}); } }
+  // particles
+  const dt = 1/60; c.save(); c.globalCompositeOperation = 'lighter';
+  for (const p of RVL.ps){ p.t += dt;
+    if (p.home){ const dx = cx - p.x, dy = cy - p.y, dd = Math.hypot(dx, dy) || 1; p.vx += (dx/dd*900 + (-dy/dd)*p.sp*420)*dt; p.vy += (dy/dd*900 + (dx/dd)*p.sp*420)*dt; p.vx *= 0.9; p.vy *= 0.9; if (dd < 14) p.t = p.life; }
+    else if (p.orb != null){ p.orb += dt*1.4; p.rr += dt*18; p.x = cx + Math.cos(p.orb)*p.rr; p.y = cy + Math.sin(p.orb)*p.rr*0.75; }
+    else { p.vx *= 0.94; p.vy *= 0.94; }
+    if (p.orb == null){ p.x += p.vx*dt; p.y += p.vy*dt; }
+    const a = Math.max(0, 1 - p.t/p.life); c.globalAlpha = a; c.fillStyle = p.col; c.beginPath(); c.arc(p.x, p.y, p.s*(0.6 + 0.4*a), 0, TAU); c.fill(); }
+  c.restore(); RVL.ps = RVL.ps.filter(p => p.t < p.life); if (RVL.ps.length > 600) RVL.ps.splice(0, RVL.ps.length - 600);
+}
+{ const _se = showEvo; showEvo = function(ev){ const r = _se.apply(this, arguments); try { rvlStart(ev); } catch(err){ console.error(err); } return r; }; }
+// arena aura after the reveal closes
+{ const _up = update; update = function(dt){ const r = _up.apply(this, arguments);
+    try { const A = RVL.aura; if (A && run && P){ if (A.pending && state === 'play'){ A.pending = false; A.t = 0; ring(P.x, P.y, 160*S, A.cols[0], 0.6); ring(P.x, P.y, 110*S, A.cols[1], 0.5); }
+        if (!A.pending){ A.t += dt; if (A.t > 2.6) RVL.aura = null;
+          else if (SET.particles !== 'low' && parts.length < 380 && Math.random() < 0.6){ const a = Math.random()*TAU, rr = (26 + Math.random()*12)*S; parts.push({x:P.x + Math.cos(a)*rr, y:P.y + Math.sin(a)*rr, vx:-Math.sin(a)*60*S, vy:Math.cos(a)*60*S - 30*S, life:0.5, max:0.5, r:2.4*S, col:Math.random() < 0.5 ? A.cols[0] : A.cols[1], f:1}); } } } } catch(err){}
+    return r; }; }
+{ const _dr = draw; draw = function(now){ const r = _dr.apply(this, arguments);
+    try { const A = RVL.aura; if (A && !A.pending && run && P && state === 'play'){ const k = A.t/2.6, c = ctx; c.save(); c.globalAlpha = 0.5*(1 - k); c.strokeStyle = A.cols[0]; c.lineWidth = 3*S;
+        c.beginPath(); c.arc(P.x, P.y, (34 + 6*Math.sin(A.t*8))*S, 0, TAU); c.stroke(); c.strokeStyle = A.cols[1]; c.setLineDash([8*S, 8*S]); c.lineDashOffset = -A.t*60*S; c.beginPath(); c.arc(P.x, P.y, 44*S, 0, TAU); c.stroke(); c.restore(); } } catch(err){}
+    return r; }; }
+{ const st = document.createElement('style'); st.textContent = `#evoFx{position:absolute; inset:0; width:100%; height:100%; pointer-events:none; z-index:0} #evoOv > :not(#evoFx){position:relative; z-index:1}`; document.head.appendChild(st); }
+
+// =====================================================================
 // FIRST-TIME TUTORIAL · "Your First Adventure"
 // A brand-new player is guided through the real game: welcome card, Arin the guide in Forgotten Forest, a glowing
 // trail along walkable ground to the real dungeon gate, the real dungeon panel (Normal, stage 1), then inside the
