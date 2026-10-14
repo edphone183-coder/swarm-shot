@@ -1616,11 +1616,11 @@ Object.assign(WG, {
 });
 for (const k of ['candycannon','puppetstrings','serpentsthunder','emperorscrystal','nightmarescythe']) GL['w_' + k] = WG[k];
 WPN.celestialrupture = {name:'Celestial Rupture', rarity:'secret', icon:'', col:'#9B7BFF',
-  desc:'Two orbs form at your hands, a teal one that pulls (gravity) and a gold one that pushes (repulsion). They orbit, collide and merge into a white-violet core that you launch at the swarm. It cuts through everything in its path and bursts on impact. Level 4 adds a gravity drag along its path; level 5 a far bigger burst.',
+  desc:'You bend space with your hands: blue attraction forms at one, red repulsion at the other. They orbit, collide and merge into a dense purple sphere that you thrust at the swarm. It tears through everything in its path and bursts in a violet shockwave. Level 4 adds a gravity drag along its path; level 5 a far bigger burst.',
   ability:'Two orbs merge into one devastating core.', kind:'proj', proj:'rupture', cd:0.7, dmg:34, shots:1, spread:0.18, spd:540, range:480, pierce:0, aoe:64,
   gun:'#5A44C8', len:1.25, wid:0.78, excl:true, boss:'wb_aeth', sfx:'grav'};
 WPN.tyrantsfang = {name:"Tyrant's Fang", rarity:'secret', icon:'', col:'#E0283C',
-  desc:'Unleashes rapid, nearly invisible cutting waves and devastating execution slashes. Levels add a second slash, wider arcs, slashes at several targets, then rapid combinations; every few volleys it lines up a heavy execution cut across the target area.',
+  desc:'Cut through space with a flick of the hand: thin, nearly invisible slashes that only show where they land. Levels add a second slash, Cross Slashes, cuts at several targets, Rapid Sever and Crimson Barrage; every few volleys a heavy cut (a line across the target area, or a Wide Execution wave) follows a short warning.',
   ability:'Near-invisible slashes; a heavy execution cut.', kind:'proj', proj:'fang', cd:0.38, dmg:17, shots:1, spread:0.16, spd:900, range:440, pierce:2,
   gun:'#4A0810', len:1.15, wid:0.7, excl:true, boss:'wb_mal', sfx:'slash'};
 const WIDS = Object.keys(WPN).filter(id => !WPN[id].fusion);
@@ -24677,119 +24677,10 @@ function wbSfx(name, o){ try { if (typeof auSfx === 'function') return auSfx(nam
 const WB_WEAPONS = ['celestialrupture', 'tyrantsfang'];
 for (const id of WB_WEAPONS){ if (!WIDS.includes(id)) WIDS.push(id); WPN[id].__id = id; }   // (already in WIDS: they are defined before it)
 Object.assign(GL, {
-  w_celestialrupture:() => G.c(32,32,26,'#1C1550') + G.c(20,24,9,'#3FE0D0',2.5) + G.c(20,24,3.5,'#04101E',0) + G.c(44,24,9,'#FFB03D',2.5) + G.c(44,24,3.5,'#FFF1C8',0) + G.c(32,42,11,'#B98CFF',3) + G.c(32,42,5,'#FFFFFF',0) + G.l('M24 30 Q32 36 32 32 M40 30 Q32 36 32 32','#E6DCFF',2),
+  w_celestialrupture:() => G.c(32,32,26,'#1C1550') + G.c(20,24,9,'#2F7BFF',2.5) + G.c(20,24,3.5,'#050B2A',0) + G.c(44,24,9,'#FF2E4A',2.5) + G.c(44,24,3.5,'#FFE0E4',0) + G.c(32,42,11,'#7A2CFF',3) + G.c(32,42,5,'#F1E6FF',0) + G.l('M24 30 Q32 36 32 32 M40 30 Q32 36 32 32','#E6DCFF',2),
   w_tyrantsfang:() => G.c(32,32,26,'#1A0508') + G.l('M12 50 Q30 34 52 12','#FFFFFF',2) + G.l('M12 50 Q30 34 52 12','#FF3B55',1.2) + G.l('M14 40 Q28 28 44 12','#FF9BA6',1) + G.p('M42 44 L52 40 L46 50 Z','#E0283C',2) + G.c(18,46,5,'#5A1A1E',2),
 });
-// ---------- Celestial Rupture: the two-orb cast ----------
-// Each shot: a teal pull orb forms at one hand (0.00), a gold push orb at the other (0.12), they orbit and close in
-// (0.24-0.36), collide with a flash and a moment of near-silence (0.36), merge into the white-violet core (0.40) and
-// launch (0.50). The sound (w_celestialrupture) follows the same timeline. You keep moving the whole time. If your fire
-// rate is faster than the cast, the cast speeds up to fit and the sound is pitched up to match.
-const WB_CASTS = [], WB_FX = [];
-const ruptLv = s => Math.max(1, Math.min(5, s.lv || 1));
-function wbRuptureCast(s, dmgMul, src){
-  const T = Math.min(0.5, Math.max(0.18, wCd(s)*0.8));
-  WB_CASTS.push({k:'rup', t:0, T, s, dmgMul, src, lv:ruptLv(s), fired:false});
-  if (WB_CASTS.length > 6) WB_CASTS.shift();
-}
-function wbRuptureFire(c){
-  const tgt = nearest(P.x, P.y, WPN.celestialrupture.range*st.rangeMul*S); const a = tgt ? Math.atan2(tgt.y - P.y, tgt.x - P.x) : (P.aim || 0);
-  const lv = c.lv, w = WPN.celestialrupture, n = 1 + (st.extraShots || 0), dist = tgt ? Math.max(120*S, Math.hypot(tgt.x - P.x, tgt.y - P.y) + 30*S) : w.range*S;
-  for (let i=0;i<n;i++){ const aa = a + (i - (n - 1)/2)*0.14, sp = w.spd*st.bspdMul*S;
-    fireBullet(P.x + Math.cos(aa)*20*S, P.y - 14*S + Math.sin(aa)*20*S, aa, w, {kind:'bullet', vis:'rupture', dmg:wDmg(c.s)*c.dmgMul*(1 + 0.12*(lv - 1)), pierce:99, aoe:0, spd:w.spd, life:dist/sp, src:c.src, wid:'celestialrupture'});
-    const b = bullets[bullets.length - 1]; if (b) b.rup = {lv, big:lv >= 2 ? 1.25 + (lv >= 5 ? 0.25 : 0) : 1, aoe:w.aoe*S*(lv >= 2 ? 1.15 : 1)*(lv >= 5 ? 1.55 : 1)*(st.aoeMul || 1), dragT:0, trail:[]}; }
-  P.recoil = 1;
-}
-// ---------- Tyrant's Fang: cutting gestures ----------
-function wbFangFire(s, dmgMul, src){
-  const lv = Math.max(1, Math.min(5, s.lv || 1)), w = WPN.tyrantsfang, range = w.range*st.rangeMul*S, base = wDmg(s)*dmgMul;
-  // targets: the nearest (levels 1-3), up to three different enemies (level 4+)
-  const cands = enemies.filter(e => !e.dead && !e.untargetable && (e.x - P.x)**2 + (e.y - P.y)**2 < range*range).sort((a, b) => ((a.x - P.x)**2 + (a.y - P.y)**2) - ((b.x - P.x)**2 + (b.y - P.y)**2));
-  if (!cands.length) return null;
-  const tg = lv >= 4 ? cands.slice(0, 3) : [cands[0]], seq = lv >= 5 ? 3 : lv >= 2 ? 2 : 1, wide = lv >= 3;
-  let a0 = Math.atan2(tg[0].y - P.y, tg[0].x - P.x);
-  for (let k=0;k<seq;k++) WB_CASTS.push({k:'fang', t:-k*0.07, T:0.001, fire:() => { for (const t of tg){ if (t.dead) continue; const a = Math.atan2(t.y - P.y, t.x - P.x) + (k ? (k % 2 ? 0.08 : -0.08) : 0);
-      fireBullet(P.x, P.y - 10*S, a, w, {kind:'bullet', vis:'fang', dmg:base*(k ? 0.7 : 1), pierce:w.pierce + st.extraPierce, spd:w.spd, src, wid:'tyrantsfang'}); const b = bullets[bullets.length - 1]; if (b){ b.fang = {wide, side:k % 2 ? -1 : 1}; } }
-      WB_FX.push({k:'gesture', t:0, a:a0, side:k % 2 ? -1 : 1});
-      try { if (typeof auSfx === 'function') auSfx(pick(['w_fang', 'w_fang2', 'w_fang3']), {vol:0.55, key:'w_fang', cd:35, max:3, group:'gun', dk:0.25, pri:3, vary:0.08, pan:(Math.random() - 0.5)*0.3, budget:'gun'}); } catch(e){} }});
-  // the execution cut: every 5th volley (sooner at higher levels), a line across the target area, then heavy damage
-  s.fangN = (s.fangN || 0) + 1;
-  if (s.fangN % (lv >= 5 ? 3 : lv >= 3 ? 4 : 5) === 0){ const t = tg[0], a = a0 + Math.PI/2*(Math.random() < 0.5 ? 1 : -1)*0.0 + rnd(-0.6, 0.6), L = 230*S*(lv >= 5 ? 1.35 : 1);
-    WB_FX.push({k:'exec', t:0, x:t.x, y:t.y, a, L, warn:0.42, dmg:base*4.2, src, lv});
-    try { if (typeof auSfx === 'function') auSfx('w_fang_heavy', {vol:0.75, key:'w_fang_heavy', cd:250, max:1, pri:3}); } catch(e){} }
-  return a0;
-}
-{ const _sp = shootPattern; shootPattern = function(fx, fy, tgt, s, dmgMul, src){
-    if (s && src === 'player' && s.id === 'celestialrupture'){ wbRuptureCast(s, dmgMul, src); return Math.atan2(tgt.y - fy, tgt.x - fx); }
-    if (s && src === 'player' && s.id === 'tyrantsfang'){ const a = wbFangFire(s, dmgMul, src); if (a != null) return a; }
-    return _sp.apply(this, arguments); }; }
-// casts, the rupture's path effects and the execution cuts
-{ const _up = update; update = function(dt){
-    try { if (run && state === 'play'){
-      for (const c of WB_CASTS){ c.t += dt; if (c.k === 'rup' && !c.fired && c.t >= c.T){ c.fired = true; wbRuptureFire(c); } if (c.k === 'fang' && !c.fired && c.t >= 0){ c.fired = true; c.fire(); } }
-      for (let i = WB_CASTS.length - 1; i >= 0; i--) if (WB_CASTS[i].fired && (WB_CASTS[i].k === 'fang' || WB_CASTS[i].t > WB_CASTS[i].T + 0.15)) WB_CASTS.splice(i, 1);
-      for (const b of bullets){ if (!b.rup || b.dead) continue; const R = b.rup;
-        R.trail.push([b.x, b.y]); if (R.trail.length > (R.lv >= 3 ? 14 : 7)) R.trail.shift();
-        // level 4+: gravity drag along the path
-        if (R.lv >= 4){ R.dragT -= dt; const DR = 70*S*R.big; for (const e of enemies){ if (e.dead || e.attacks || e.mir || e.untargetable) continue; const dx = b.x - e.x, dy = b.y - e.y, d = Math.hypot(dx, dy); if (d < DR && d > 4*S){ const f = Math.min(d, 220*S*dt); e.x += dx/d*f; e.y += dy/d*f; if (R.dragT <= 0) dealDamage(e, b.dmg*0.12, {noCrit:true, quiet:true, src:b.src, wid:b.wid}); } } if (R.dragT <= 0) R.dragT = 0.2; }
-        // the impact: the core bursts where it was aimed (or when it runs out)
-        if (b.life <= dt*1.05 && !R.boom){ R.boom = true; explodeAt(b.x, b.y, R.aoe, b.dmg*1.1, '#B98CFF', {wid:'celestialrupture'}); WB_FX.push({k:'rupboom', t:0, x:b.x, y:b.y, r:R.aoe, lv:R.lv});
-          try { if (typeof auSfx === 'function') auSfx('w_rupture_hit', {x:b.x, y:b.y, vol:0.7, key:'w_rupture_hit', cd:90, max:2, pri:3, budget:'boom'}); } catch(e){} }
-      }
-      for (const f of WB_FX){ f.t += dt;
-        if (f.k === 'exec' && !f.done && f.t >= f.warn){ f.done = true; const dx = Math.cos(f.a), dy = Math.sin(f.a), x1 = f.x - dx*f.L, y1 = f.y - dy*f.L, x2 = f.x + dx*f.L, y2 = f.y + dy*f.L;
-          let n = 0; for (const e of enemies){ if (e.dead || e.untargetable) continue; if (segDist(e.x, e.y, x1, y1, x2, y2) < e.r + 22*S){ dealDamage(e, f.dmg, {proc:n++ < 3, src:f.src, wid:'tyrantsfang', kind:'crit'}); } }
-          shake = Math.max(shake, reduce ? 0 : 5); }
-      }
-      for (let i = WB_FX.length - 1; i >= 0; i--){ const f = WB_FX[i]; if (f.t > (f.k === 'exec' ? f.warn + 0.35 : f.k === 'rupboom' ? 0.6 : 0.25)) WB_FX.splice(i, 1); }
-      // the fang's wider arcs (level 3+) hit a broader band
-      for (const b of bullets){ if (!b.fang || !b.fang.wide || b.dead) continue; for (const e of enemies){ if (e.dead || e.untargetable || b.hit.has(e)) continue; if ((e.x - b.x)**2 + (e.y - b.y)**2 < (e.r + 20*S)**2){ b.hit.add(e); dealDamage(e, b.dmg, {proc:true, src:b.src, wid:b.wid}); WB_FX.push({k:'cut', t:0, x:e.x, y:e.y, a:Math.atan2(b.vy, b.vx)}); } } }
-    } } catch(err){ console.error(err); }
-    return _up.apply(this, arguments); }; }
-// a cut line on every Tyrant's Fang hit
-{ const _dd = dealDamage; dealDamage = function(e, dmg, o){ const r = _dd.apply(this, arguments); if (o && o.wid === 'tyrantsfang' && e && WB_FX.length < 60 && o.src !== 'dot') WB_FX.push({k:'cut', t:0, x:e.x, y:e.y, a:Math.random()*TAU}); return r; }; }
-if (typeof AU !== 'undefined' && AU.def && AU.defs['w_rupture']){ AU.def('w_celestialrupture', AU.defs['w_rupture'].fn, {warm:true}); AU.def('w_tyrantsfang', () => new Float32Array(64)); }
-// pitch the cast sound up when the cast is shortened by a fast fire rate (so it stays in sync)
-{ const _ws = wsfx; wsfx = function(name, wd){ if (wd && wd.__id === 'celestialrupture'){ const s = run && run.weapons.find(x => x.id === 'celestialrupture'), T = s ? Math.min(0.5, Math.max(0.18, wCd(s)*0.8)) : 0.5; try { auSfx('w_celestialrupture', {vol:0.6, rate:0.5/T, key:'w_rupture', cd:80, max:2, group:'gun', pri:3, vary:0.02}); } catch(e){} return; } if (wd && wd.__id === 'tyrantsfang') return; return _ws.apply(this, arguments); }; }
-// projectile looks: the core, its trail, the near-invisible fang cut
-{ const _v2 = drawVis2; drawVis2 = function(b, now){
-    if (b.vis === 'rupture'){ const c = ctx, R = b.rup || {lv:1, big:1, trail:[]}, r = 9*S*R.big;
-      c.save(); c.lineCap = 'round'; if (R.trail.length > 1){ for (let i=1;i<R.trail.length;i++){ const k = i/R.trail.length; c.globalAlpha = 0.45*k; c.strokeStyle = i % 2 ? '#7B5CFF' : '#B98CFF'; c.lineWidth = r*1.6*k; c.beginPath(); c.moveTo(R.trail[i - 1][0], R.trail[i - 1][1]); c.lineTo(R.trail[i][0], R.trail[i][1]); c.stroke(); } }
-      c.restore(); wbOrb(ctx, b.x, b.y, r, 'conv', now);
-      if (R.lv >= 4){ c.save(); c.globalAlpha = 0.3; c.strokeStyle = '#3FE0D0'; c.lineWidth = 1.5*S; c.setLineDash([4*S, 5*S]); circle(c, b.x, b.y, 70*S*R.big); c.stroke(); c.restore(); }
-      return true; }
-    if (b.vis === 'fang'){ const c = ctx, a = Math.atan2(b.vy, b.vx), wide = b.fang && b.fang.wide, h = (wide ? 26 : 15)*S, side = b.fang ? b.fang.side : 1;
-      c.save(); c.translate(b.x, b.y); c.rotate(a); c.lineCap = 'round';
-      c.globalAlpha = 0.22; c.strokeStyle = '#FFFFFF'; c.lineWidth = 4*S; c.beginPath(); c.moveTo(0, -h*side); c.quadraticCurveTo(8*S, 0, 0, h*side); c.stroke();
-      c.globalAlpha = 0.95; c.strokeStyle = '#FF3B55'; c.lineWidth = 1.4*S; c.stroke();
-      c.globalAlpha = 0.3; c.strokeStyle = '#FF9BA6'; c.lineWidth = 1*S; c.beginPath(); c.moveTo(-6*S, 0); c.lineTo(-38*S, 0); c.stroke(); c.restore();
-      return true; }
-    return _v2.apply(this, arguments); }; }
-// cast orbs at the player's hands, execution lines, impact cuts and bursts (drawn above the world)
-{ const _dr = draw; draw = function(now){ const r = _dr.apply(this, arguments); try { if (run && ['play', 'paused', 'levelup', 'chest'].includes(state)) wbDrawItemFx(now); } catch(err){ console.error(err); } return r; }; }
-function wbDrawItemFx(now){
-  const c = ctx;
-  for (const k of WB_CASTS){ if (k.k !== 'rup' || k.fired) continue; const T = k.T, u = k.t/T, hx = P.x, hy = P.y - 22*S, sep = 22*S*(1 - Math.max(0, (u - 0.48)/0.24)**2), sp = now*10 + u*14;
-    if (u < 0.72){ const pa = u < 0.48 ? {x:hx + 20*S, y:hy} : {x:hx + Math.cos(sp)*sep, y:hy + Math.sin(sp)*sep*0.6}, pb = u < 0.48 ? {x:hx - 20*S, y:hy} : {x:hx - Math.cos(sp)*sep, y:hy - Math.sin(sp)*sep*0.6};
-      if (u > 0.48){ c.save(); c.globalAlpha = 0.45; c.lineWidth = 2.5*S; c.strokeStyle = '#3FE0D0'; c.beginPath(); for (let i=0;i<8;i++){ const s2 = sp - i*0.18; i ? c.lineTo(hx + Math.cos(s2)*sep, hy + Math.sin(s2)*sep*0.6) : c.moveTo(hx + Math.cos(s2)*sep, hy + Math.sin(s2)*sep*0.6); } c.stroke();
-        c.strokeStyle = '#FFB03D'; c.beginPath(); for (let i=0;i<8;i++){ const s2 = sp - i*0.18; i ? c.lineTo(hx - Math.cos(s2)*sep, hy - Math.sin(s2)*sep*0.6) : c.moveTo(hx - Math.cos(s2)*sep, hy - Math.sin(s2)*sep*0.6); } c.stroke(); c.restore(); }
-      wbOrb(c, pa.x, pa.y, 6.5*S*Math.min(1, u/0.24)*(k.lv >= 5 ? 1.25 : 1), 'pull', now);
-      if (u > 0.24) wbOrb(c, pb.x, pb.y, 6.5*S*Math.min(1, (u - 0.24)/0.24)*(k.lv >= 5 ? 1.25 : 1), 'push', now); }
-    else { if (u < 0.8){ c.save(); c.globalAlpha = 1 - (u - 0.72)/0.08; c.fillStyle = '#FFFFFF'; circle(c, hx, hy, 18*S); c.fill(); c.restore(); } wbOrb(c, hx, hy, (5 + 6*Math.min(1, (u - 0.72)/0.28))*S*(k.lv >= 5 ? 1.3 : 1), 'conv', now); } }
-  for (const f of WB_FX){
-    if (f.k === 'exec'){ const dx = Math.cos(f.a), dy = Math.sin(f.a), x1 = f.x - dx*f.L, y1 = f.y - dy*f.L, x2 = f.x + dx*f.L, y2 = f.y + dy*f.L; c.save(); c.lineCap = 'round';
-      if (f.t < f.warn){ const k = f.t/f.warn; c.globalAlpha = 0.35 + 0.5*k; c.strokeStyle = '#FF3B55'; c.lineWidth = 1.5*S; c.setLineDash([6*S, 6*S]); c.beginPath(); c.moveTo(x1, y1); c.lineTo(x2, y2); c.stroke(); c.setLineDash([]);
-        c.globalAlpha = 0.2*k; c.lineWidth = 30*S; c.stroke(); }
-      else { const k = 1 - (f.t - f.warn)/0.35; c.globalAlpha = k; c.strokeStyle = '#FFFFFF'; c.lineWidth = 10*S*k; c.beginPath(); c.moveTo(x1, y1); c.lineTo(x2, y2); c.stroke(); c.strokeStyle = '#FF3B55'; c.lineWidth = 3*S; c.stroke(); }
-      c.restore(); }
-    else if (f.k === 'cut'){ const k = 1 - f.t/0.25; c.save(); c.globalAlpha = k; c.strokeStyle = '#FFFFFF'; c.lineWidth = 2*S; c.lineCap = 'round'; const L = 16*S; c.beginPath(); c.moveTo(f.x - Math.cos(f.a)*L, f.y - Math.sin(f.a)*L); c.lineTo(f.x + Math.cos(f.a)*L, f.y + Math.sin(f.a)*L); c.stroke(); c.strokeStyle = '#FF3B55'; c.lineWidth = 1*S; c.stroke(); c.restore(); }
-    else if (f.k === 'rupboom'){ const k = f.t/0.6; c.save(); c.globalAlpha = 1 - k; c.fillStyle = '#F2EEFF'; circle(c, f.x, f.y, f.r*0.4*(1 - k)); c.fill(); c.strokeStyle = '#B98CFF'; c.lineWidth = 8*S*(1 - k); circle(c, f.x, f.y, f.r*(0.3 + 0.9*k)); c.stroke(); c.strokeStyle = '#3FE0D0'; c.lineWidth = 3*S*(1 - k); circle(c, f.x, f.y, f.r*(0.2 + 1.1*k)); c.stroke(); c.restore(); }
-    else if (f.k === 'gesture'){ const k = 1 - f.t/0.25; c.save(); c.globalAlpha = k*0.8; c.strokeStyle = '#FF3B55'; c.lineWidth = 2.5*S; c.beginPath(); c.arc(P.x, P.y - 16*S, 26*S, f.a - 0.9*f.side, f.a + 0.9*f.side, f.side < 0); c.stroke(); c.restore(); }
-  }
-}
-// reset between runs
-{ const _ss = startStage; startStage = function(){ WB_CASTS.length = 0; WB_FX.length = 0; return _ss.apply(this, arguments); }; }
-
+// (the two weapons' casting, effects and sounds live in wb_secret.js)
 // ---------- Signature Powers ----------
 // (the bosses and the two Signature Powers are declared ahead of the save loader; see edits.py)
 
@@ -24877,6 +24768,487 @@ if (typeof duoMe === 'function'){
     return r; }; }
 // the icon caches may already hold a fallback for these keys (looked up before the artwork above existed): clear them
 for (const k of ['w_celestialrupture', 'w_tyrantsfang', 'celestialrupture', 'tyrantsfang', 'sp_expanse', 'sp_dominion', 's_heavenfall', 's_siege']){ try { delete ICON_CACHE[k]; delete ICON_IMG[k]; } catch(e){} }
+
+// =====================================================================
+// SECRET WEAPONS · Celestial Rupture and Tyrant's Fang: the techniques, performed by the character.
+// - Poses go through the existing body rig (lk.pose): the arms move, the legs keep walking, you keep moving.
+// - Celestial Rupture: blue (attraction) forms at one hand, red (repulsion) at the other, they orbit and spiral
+//   together, collide in a white flash, merge into a violet core that swells into a dense purple sphere, and the
+//   front arm thrusts it out. The sphere travels, cuts through everything on its path and bursts in layers.
+// - Tyrant's Fang: cutting gestures (forehand, backhand, flurries, a drawn-back heavy cut). Slashes are thin,
+//   nearly invisible shears; the hit is a diagonal cut flash and a spark. Levels add Cross Slash, Rapid Sever,
+//   Crimson Barrage; heavy cuts (Cleave-style line, Wide Execution wave) come with a short warning.
+// - Every sound is a separate synthesised asset (see the defs at the bottom) started by the animation event it
+//   belongs to, so sound and picture can't drift, whatever the fire rate.
+// - Duos: each side sends tiny technique events (start, direction, target, heavy cuts). The partner's game replays
+//   the poses and effects locally, cosmetic only: damage is still dealt once, by the player who fired.
+// =====================================================================
+const WB_CASTS = [], WB_FX = [], WB_PT = [];
+const SW = {mate:{x:0, y:0, r:0, a:0, walk:0, mv:false, act:null}, me:{act:null}, out:[], outN:0, inSeen:0, inMate:false, fr:0, tilt:0, fangVolley:0};
+const swE = k => k <= 0 ? 0 : k >= 1 ? 1 : k*k*(3 - 2*k);
+const swL = (a, b, k) => [a[0] + (b[0] - a[0])*k, a[1] + (b[1] - a[1])*k];
+const swBig = lv => [1, 1.1, 1.2, 1.3, 1.55][Math.max(1, Math.min(5, lv)) - 1];
+const swLow = () => typeof SET !== 'undefined' && SET.particles === 'low';
+const swLv = s => Math.max(1, Math.min(5, (s && s.lv) || 1));
+// stage marks of the Rupture cast, as fractions of its length (0.58 s at the base fire rate)
+const RU = {red:0.207, comb:0.43, hit:0.69, form:0.76, thrust:0.92};
+// the techniques get their own small budgets, so five other weapons can't starve them (and they can't flood the mix)
+if (typeof AU !== 'undefined' && AU.BUD) Object.assign(AU.BUD, {tech:12, cut:14});
+function swSnd(name, o){ try { if (typeof AU !== 'undefined' && AU.ctx){ const q = Object.assign({bus:'sfx', group:'gun', pri:3, budget:/^celestial/.test(name) ? 'tech' : 'cut'}, o); if (q.x != null && q.y == null) q.y = P ? P.y : H/2; return AU.play(name, q); } } catch(e){ console.warn('sound', name, e); } return null; }
+function swKill(v){ if (v && typeof AU !== 'undefined') try { AU.kill(v); } catch(e){} }
+
+// ---------- who is casting: me or my Duos partner ----------
+function swActor(who){
+  if (who === 'mate'){ const m = SW.mate; return {x:m.x, y:m.y, r:m.r || P.r*S, a:m.a, walk:m.walk, mv:m.mv}; }
+  return {x:P.x, y:P.y, r:P.r*S, a:P.aim || 0, walk:P.walk || 0, mv:!!P.moving};
+}
+// a hand position in the rig's pose units -> world (same maths as the rig, so the energy sits in the hand)
+function swW(A, u, lean){ const sideF = Math.cos(A.a) < 0 ? -1 : 1, bob = A.mv ? Math.abs(Math.sin(A.walk))*A.r*0.07 : 0;
+  return [A.x + (lean || 0)*A.r*sideF + sideF*u[0]*A.r, A.y - bob + u[1]*A.r]; }
+const swFwd = a => [Math.abs(Math.cos(a)), Math.sin(a)];   // the aim direction in pose units (x is "forward")
+
+// ---------- Celestial Rupture: state of one cast at its current time ----------
+const R_REST_F = [0.5, 0.44], R_REST_B = [-0.5, 0.44];
+function swRup(c){
+  if (c._fr === SW.fr && c._st) return c._st;
+  const A = swActor(c.who), u = Math.min(1, c.t/c.T), [fx, fy] = swFwd(c.who === 'me' ? A.a : c.a);
+  const B_UP = [-0.98, -0.02], B_IN = [-0.5, 0.08], B_SUP = [0.25, 0.16], F_UP = [0.98, -0.02], F_IN = [0.5, 0.08], F_HOLD = [0.42, 0.14], F_EXT = [0.45 + 0.85*fx, 0.16 + 0.75*fy];
+  let hb, hf, lean = 0.05;
+  if (u < RU.red) hb = swL(R_REST_B, B_UP, swE(u/RU.red)); else if (u < RU.comb) hb = [B_UP[0], B_UP[1] + Math.sin(c.t*40)*0.015]; else if (u < RU.hit) hb = swL(B_UP, B_IN, swE((u - RU.comb)/(RU.hit - RU.comb))); else hb = swL(B_IN, B_SUP, swE((u - RU.hit)/(RU.thrust - RU.hit)));
+  if (u < RU.red) hf = swL(R_REST_F, [0.52, 0.32], u/RU.red); else if (u < RU.comb) hf = swL([0.52, 0.32], F_UP, swE((u - RU.red)/(RU.comb - RU.red))); else if (u < RU.hit) hf = swL(F_UP, F_IN, swE((u - RU.comb)/(RU.hit - RU.comb)));
+  else if (u < RU.thrust) hf = swL(F_IN, F_HOLD, swE((u - RU.hit)/(RU.thrust - RU.hit))); else { hf = swL(F_HOLD, F_EXT, swE((u - RU.thrust)/(1 - RU.thrust))); lean = 0.1; }
+  if (c.fired){ const k = (c.t - c.T)/0.24; hf = k < 0.35 ? F_EXT : swL(F_EXT, R_REST_F, swE((k - 0.35)/0.65)); hb = swL(B_SUP, R_REST_B, swE(k)); lean = 0.1*(1 - swE(k)); }
+  const sideF = Math.cos(A.a) < 0 ? -1 : 1, Wb = swW(A, hb, lean), Wf = swW(A, hf, lean), ob = 6.2*S*(c.lv >= 5 ? 1.3 : 1);
+  const S_ = {u, hb, hf, lean, Wb, Wf, ob, A};
+  // the two orbs: in the palms, then orbiting a shared point while the orbit tightens and speeds up
+  const pb0 = [Wb[0] - sideF*0.32*A.r, Wb[1] - 0.16*A.r], pf0 = [Wf[0] + sideF*0.32*A.r, Wf[1] - 0.16*A.r];
+  const Cc = swW(A, [0.3 + 0.45*fx, -0.02 + 0.3*fy], lean);
+  if (u < RU.comb){ S_.pb = pb0; S_.pr = u >= RU.red ? pf0 : null; S_.C = Cc; }
+  else if (u < RU.hit){ const k = (u - RU.comb)/(RU.hit - RU.comb), spin = k*k*(c.lv >= 5 ? 7.5 : 5.5)*Math.PI, shrink = Math.pow(1 - swE(k), 0.85);
+    if (!c.orb0){ c.orb0 = {db:Math.hypot(pb0[0] - Cc[0], pb0[1] - Cc[1]), ab:Math.atan2(pb0[1] - Cc[1], pb0[0] - Cc[0]), dr:Math.hypot(pf0[0] - Cc[0], pf0[1] - Cc[1]), ar:Math.atan2(pf0[1] - Cc[1], pf0[0] - Cc[0])}; }
+    const O = c.orb0, rb = Math.max(O.db, A.r*0.55)*shrink, rr = Math.max(O.dr, A.r*0.55)*shrink;
+    S_.pb = [Cc[0] + Math.cos(O.ab + spin)*rb, Cc[1] + Math.sin(O.ab + spin)*rb*0.78]; S_.pr = [Cc[0] + Math.cos(O.ar + spin)*rr, Cc[1] + Math.sin(O.ar + spin)*rr*0.78]; S_.C = Cc; S_.spin = spin; S_.k = k; }
+  else { const core = u < RU.thrust ? swL(Cc, [Wf[0] + Math.cos(A.a)*A.r*0.55, Wf[1] + Math.sin(A.a)*A.r*0.55 - 0.08*A.r], swE((u - RU.hit)/(RU.thrust - RU.hit))) : [Wf[0] + Math.cos(A.a)*A.r*0.7, Wf[1] + Math.sin(A.a)*A.r*0.7 - 0.06*A.r];
+    S_.core = core; const R = 13*S*swBig(c.lv); S_.coreR = u < RU.form ? R*(0.15 + 0.2*(u - RU.hit)/(RU.form - RU.hit)) : u < RU.thrust ? R*(0.35 + 0.75*swE((u - RU.form)/(RU.thrust - RU.form))) : R*(1.1 - 0.12*Math.sin((u - RU.thrust)/(1 - RU.thrust)*Math.PI)); S_.C = Cc; }
+  c._fr = SW.fr; c._st = S_; return S_;
+}
+function swRupCast(s, dmgMul, src){
+  const T = Math.min(0.62, Math.max(0.24, wCd(s)*0.85)), lv = swLv(s), w = WPN.celestialrupture, tgt = nearest(P.x, P.y, w.range*st.rangeMul*S);
+  const c = {k:'rup', who:'me', t:0, T, s, dmgMul, src, lv, fired:false, snd:{}, a:P.aim || 0, d:tgt ? Math.hypot(tgt.x - P.x, tgt.y - P.y) : w.range*S};
+  WB_CASTS.push(c); if (WB_CASTS.filter(x => x.k === 'rup').length > 5) WB_CASTS.splice(WB_CASTS.findIndex(x => x.k === 'rup'), 1);
+  SW.me.act = c; swEmit(['r', Math.round(c.a*100)/100, lv, Math.round(T*100)/100, Math.round(c.d/S)]);
+}
+// the stage sounds: each one starts when its stage starts (a fast fire rate shortens the stages, so they are sped up)
+function swRupSounds(c, S_){
+  const mate = c.who === 'mate', v = mate ? 0.3 : 1, x = S_.C ? S_.C[0] : P.x, rate = Math.min(1.7, Math.max(1, 0.58/c.T)), mx = c.lv >= 5 ? 1.15 : 1, u = S_.u, D = c.snd;
+  if (!D.b){ D.b = 1; D.vb = swSnd('celestial_blue_charge', {vol:0.42*v*mx, rate, key:'cr_blue', cd:90, max:2, x, vary:0.03}); }
+  if (u >= RU.red && !D.r){ D.r = 1; D.vr = swSnd('celestial_red_charge', {vol:0.36*v*mx, rate, key:'cr_red', cd:90, max:2, x, vary:0.03}); }
+  if (u >= RU.comb && !D.o){ D.o = 1; D.vo = swSnd('celestial_energy_orbit', {vol:0.34*v*mx, rate, key:'cr_orbit', cd:90, max:2, x, vary:0.02}); }
+  // the collision: everything cuts out for a moment, then a single compressed crack
+  if (u >= RU.hit && !D.h){ D.h = 1; swKill(D.vb); swKill(D.vr); swKill(D.vo); swSnd('celestial_merge', {vol:0.45*v, key:'cr_merge', cd:90, max:2, x, at:0.035, vary:0.02}); }
+  if (u >= RU.form && !D.f){ D.f = 1; swSnd('celestial_purple_form', {vol:0.55*v*mx, key:'cr_form', cd:110, max:2, x, vary:0.02, pri:3}); if (c.lv >= 5) swSnd('celestial_max_layer', {vol:0.3*v, key:'cr_max', cd:200, max:1, x}); }
+}
+function swRupRelease(c){
+  const S_ = swRup(c), A = S_.A, w = WPN.celestialrupture, lv = c.lv, R = 13*S*swBig(lv), core = S_.core || [A.x, A.y];
+  let a = c.a;
+  if (c.who === 'me'){ const tgt = nearest(P.x, P.y, w.range*st.rangeMul*S); a = tgt ? Math.atan2(tgt.y - core[1], tgt.x - core[0]) : (P.aim || 0); c.a = a; }
+  const x = c.who === 'mate' ? A.x : P.x;
+  swSnd('celestial_purple_release', {vol:(c.who === 'mate' ? 0.3 : 0.62)*(lv >= 5 ? 1.15 : 1), key:'cr_rel', cd:90, max:2, x, vary:0.02, pri:3});
+  if (c.who === 'mate'){ const v = w.spd*S; WB_FX.push({k:'csph', t:0, x:core[0], y:core[1], vx:Math.cos(a)*v, vy:Math.sin(a)*v, life:Math.max(0.25, (c.d*S + 30*S)/v), R, lv, trail:[], cos:true}); return; }
+  const n = 1 + (st.extraShots || 0), dist = Math.max(120*S, c.d + 30*S);
+  for (let i=0;i<n;i++){ const aa = a + (i - (n - 1)/2)*0.14, sp = w.spd*st.bspdMul*S;
+    fireBullet(core[0], core[1], aa, w, {kind:'bullet', vis:'rupture', dmg:wDmg(c.s)*c.dmgMul*(1 + 0.12*(lv - 1)), pierce:99, aoe:0, spd:w.spd, life:dist/sp, src:c.src, wid:'celestialrupture'});
+    const b = bullets[bullets.length - 1]; if (b){ b.rup = {lv, big:swBig(lv), R, aoe:w.aoe*S*(lv >= 2 ? 1.15 : 1)*(lv >= 5 ? 1.55 : 1)*(st.aoeMul || 1), dragT:0, trail:[], lx:b.x, ly:b.y}; SW.sph.push(b);
+      if (i === 0) b.rup.loop = swSnd('celestial_purple_travel_loop', {vol:0.2*(lv >= 5 ? 1.2 : 1), key:'cr_loop', cd:60, max:2, x:b.x, vary:0.02, pri:2}); } }
+  P.recoil = 1; DUO_LAST();
+}
+SW.sph = []; SW.fb = [];
+const DUO_LAST = () => { try { if (typeof DUO !== 'undefined') DUO.lastShot = performance.now(); } catch(e){} };
+// the impact, in layers: compress (a brief hold), flash, shockwave, turbulent rings, particles, fading distortion
+function swRupImpact(x, y, aoe, lv, dmg, src, cos){
+  WB_FX.push({k:'rupboom', t:0, x, y, r:aoe, lv, dmg, src, cos, hit:false});
+}
+function swRupBoom(f){
+  f.hit = true;
+  if (!f.cos){ let n = 0;
+    for (const e of enemies){ if (e.dead || e.untargetable) continue; const d = Math.hypot(e.x - f.x, e.y - f.y); if (d < f.r + e.r){ dealDamage(e, f.dmg, {src:'aoe', wid:'celestialrupture', proc:n++ < 4});
+      e.flash = Math.max(e.flash || 0, 0.14); if (!e.attacks && !e.wb && d > 1){ const push = 34*S*(1 - d/(f.r + e.r)); e.x += (e.x - f.x)/d*push; e.y += (e.y - f.y)/d*push; } } }
+    try { evoOnExplode(f.x, f.y, f.r, f.dmg, {wid:'celestialrupture'}); weaponExplodeExtra(f.x, f.y, f.r, {wid:'celestialrupture'}); } catch(e){}
+    shake = Math.max(shake, reduce ? 0 : (f.lv >= 5 ? 6 : 4)); }
+  const n = swLow() ? 12 : f.lv >= 5 ? 40 : 26;
+  for (let i=0;i<n && WB_PT.length < 460;i++){ const a = Math.random()*TAU, sp = (f.lv >= 5 ? 260 : 200)*S*(0.4 + Math.random()); WB_PT.push({k:'w', x:f.x, y:f.y, vx:Math.cos(a)*sp, vy:Math.sin(a)*sp, life:0.45 + Math.random()*0.3, max:0.75, col:i % 5 === 0 ? '#9FD0FF' : i % 7 === 0 ? '#FF7A8A' : i % 2 ? '#C9A2FF' : '#F2E8FF', r:(1.5 + Math.random()*2)*S}); }
+  const v = f.cos ? 0.3 : 1;
+  swSnd('celestial_purple_impact', {x:f.x, vol:0.75*v*(f.lv >= 5 ? 1.15 : 1), key:'cr_hit', cd:80, max:2, pri:3, budget:'boom', group:null});
+  if (f.lv >= 5) swSnd('celestial_max_layer', {x:f.x, vol:0.25*v, key:'cr_max', cd:200, max:1, rate:0.8});
+  swSnd('celestial_purple_decay', {x:f.x, vol:0.4*v, key:'cr_decay', cd:150, max:1, at:0.12, pri:2, budget:'boom', group:null});
+}
+
+// ---------- Tyrant's Fang ----------
+// gesture styles: 'fore' (high to low snap), 'back' (across the body, snapping outward), 'flurry' (rapid flicks), 'heavy' (drawn back, forceful sweep)
+const F_REST = [0.5, 0.44];
+function swGest(who, style, a, dur, warn){ const g = {k:'gest', who, style, a, t:0, dur, warn:warn || 0}; SW[who === 'mate' ? 'mate' : 'me'].gest = g; return g; }
+function swFangPose(g, A){
+  const [fx, fy] = swFwd(g.a), k = g.t/g.dur; let f = F_REST, b = [-0.48, 0.4], lean = 0;
+  if (g.style === 'fore'){ const up = [0.36, -0.42], snap = [0.32 + 0.6*fx, 0.22 + 0.55*fy];
+    f = k < 0.3 ? swL(F_REST, up, swE(k/0.3)) : k < 0.5 ? swL(up, snap, swE((k - 0.3)/0.2)) : swL(snap, F_REST, swE((k - 0.5)/0.5)); lean = k < 0.5 ? 0.05 : 0.05*(1 - (k - 0.5)*2); b = [-0.45, 0.32]; }
+  else if (g.style === 'back'){ const up = [-0.08, -0.18], snap = [0.36 + 0.55*fx, -0.3 + 0.5*fy];
+    f = k < 0.3 ? swL(F_REST, up, swE(k/0.3)) : k < 0.5 ? swL(up, snap, swE((k - 0.3)/0.2)) : swL(snap, F_REST, swE((k - 0.5)/0.5)); lean = -0.03; b = [-0.5, 0.26]; }
+  else if (g.style === 'flurry'){ const p = [0.36 + 0.5*fx, -0.32 + 0.5*fy], q = [0.38 + 0.55*fx, 0.28 + 0.5*fy], ph = (k*4) % 1, n = Math.floor(k*4);
+    f = k > 0.85 ? swL(n % 2 ? q : p, F_REST, swE((k - 0.85)/0.15)) : swL(n % 2 ? p : q, n % 2 ? q : p, swE(ph)); lean = 0.06; b = [-0.42, 0.18]; }
+  else if (g.style === 'heavy'){ const W0 = g.warn, back = [-0.32, -0.5], sweep = [0.45 + 0.62*fx, 0.36 + 0.5*fy];
+    if (g.t < W0){ const q = swE(g.t/Math.max(0.05, W0*0.7)); f = swL(F_REST, back, q); lean = -0.07*q; b = swL([-0.48, 0.4], [0.32, 0.1], q); }
+    else if (g.t < W0 + 0.1){ const q = swE((g.t - W0)/0.1); f = swL(back, sweep, q); lean = -0.07 + 0.18*q; b = [0.32 - 0.6*q, 0.1 + 0.25*q]; }
+    else { const q = swE((g.t - W0 - 0.1)/Math.max(0.05, g.dur - W0 - 0.1)); f = swL(sweep, F_REST, q); lean = 0.11*(1 - q); b = swL([-0.28, 0.35], [-0.48, 0.4], q); } }
+  return {f, b, lean};
+}
+function swFangFire(s, dmgMul, src){
+  const lv = swLv(s), w = WPN.tyrantsfang, range = w.range*st.rangeMul*S, base = wDmg(s)*dmgMul;
+  const cands = enemies.filter(e => !e.dead && !e.untargetable && (e.x - P.x)**2 + (e.y - P.y)**2 < range*range).sort((a, b) => ((a.x - P.x)**2 + (a.y - P.y)**2) - ((b.x - P.x)**2 + (b.y - P.y)**2));
+  if (!cands.length) return null;
+  s.fangN = (s.fangN || 0) + 1; const N = s.fangN, tg = lv >= 4 ? cands.slice(0, 3) : [cands[0]], t0 = tg[0], a0 = Math.atan2(t0.y - P.y, t0.x - P.x);
+  // the pattern for this volley
+  let pat = 'dis';
+  if (lv === 2) pat = 'dis2';
+  else if (lv === 3) pat = N % 3 === 0 ? 'cross' : 'dis2';
+  else if (lv === 4) pat = N % 3 === 0 ? 'cross' : 'sever3';
+  else if (lv >= 5) pat = N % 4 === 0 ? 'barrage' : N % 4 === 2 ? 'cross' : 'sever4';
+  const side = N % 2 ? 1 : -1;
+  const slash = (k, delay, tilt, m) => WB_CASTS.push({k:'fang', t:-delay, T:0.001, fire:() => { for (const t of tg){ if (t.dead) continue; const a = Math.atan2(t.y - P.y, t.x - P.x) + (k ? (k % 2 ? 0.07 : -0.07) : 0);
+      fireBullet(P.x + Math.cos(a)*12*S, P.y - 8*S + Math.sin(a)*12*S, a, w, {kind:'bullet', vis:'fang', dmg:base*m, pierce:w.pierce + st.extraPierce, spd:w.spd, src, wid:'tyrantsfang'});
+      const b = bullets[bullets.length - 1]; if (b){ b.fang = {wide:lv >= 3, tilt, nh:0}; SW.fb.push(b); } }
+      swSnd(['tyrant_slash_light_01', 'tyrant_slash_light_02', 'tyrant_slash_light_03'][(N + k) % 3], {vol:0.5/(1 + k*0.25), key:'tf_light', cd:28, max:3, dk:0.3, vary:0.09, pan:(Math.random() - 0.5)*0.3}); DUO_LAST(); }});
+  swSnd('tyrant_hand_gesture', {vol:0.35, key:'tf_gest', cd:60, max:2, vary:0.1});
+  if (pat === 'dis'){ swGest('me', side > 0 ? 'fore' : 'back', a0, 0.2); slash(0, 0.05, side*0.5, 1); }
+  else if (pat === 'dis2'){ swGest('me', 'flurry', a0, 0.24); slash(0, 0.04, 0.55, 1); slash(1, 0.11, -0.6, 0.7); }
+  else if (pat === 'cross'){ swGest('me', 'back', a0, 0.22); slash(0, 0.06, 0.78, 0.85); slash(1, 0.06, -0.78, 0.85); }
+  else if (pat === 'sever3' || pat === 'sever4'){ const n = pat === 'sever4' ? 4 : 3; swGest('me', 'flurry', a0, 0.08*n + 0.1); for (let k=0;k<n;k++) slash(k, 0.04 + k*0.065, [0.6, -0.45, 0.2, -0.75][k], k ? 0.6 : 1);
+    swSnd('tyrant_rapid_combo', {vol:0.32, key:'tf_combo', cd:200, max:1, vary:0.05}); }
+  else if (pat === 'barrage'){ swGest('me', 'flurry', a0, 0.36); WB_FX.push({k:'barrage', t:0, x:t0.x, y:t0.y, n:6, i:0, next:0.08, dmg:base*0.45, src, lv});
+    swSnd('tyrant_rapid_combo', {vol:0.45, key:'tf_combo', cd:200, max:1, at:0.06, vary:0.04}); swEmit(['b', dqx(t0.x), dqy(t0.y)]); }
+  swEmit(['f', Math.round(a0*100)/100, lv, pat, dqx(t0.x), dqy(t0.y)]);
+  // heavy cuts: every 5th volley (4th from level 3, 3rd at level 5); from level 3 every other one is a Wide Execution wave
+  const every = lv >= 5 ? 3 : lv >= 3 ? 4 : 5;
+  if (N % every === 0){ s.heavyN = (s.heavyN || 0) + 1;
+    if (lv >= 3 && s.heavyN % 2 === 0){ const L = (lv >= 5 ? 210 : 170)*S, warn = 0.22; WB_FX.push({k:'wide', t:0, x:P.x, y:P.y, a:a0, L, warn, spd:1500*S, dist:400*S, hit:new Set(), dmg:base*3.2, src, lv, trail:[]});
+      swGest('me', 'heavy', a0, warn + 0.32, warn); swSnd('tyrant_heavy_charge', {vol:0.42, key:'tf_hc', cd:250, max:1, rate:1.6}); swEmit(['w', dqx(P.x), dqy(P.y), Math.round(a0*100)/100, Math.round(L/S), warn]); }
+    else { const a = a0 + Math.PI/2 + rnd(-0.55, 0.55), L = 230*S*(lv >= 5 ? 1.35 : 1), warn = lv >= 5 ? 0.5 : 0.38;
+      WB_FX.push({k:'exec', t:0, x:t0.x, y:t0.y, a, L, warn, dmg:base*4.2, src, lv, seed:Math.random()*1000});
+      swGest('me', 'heavy', a0, warn + 0.32, warn); swSnd('tyrant_heavy_charge', {vol:0.55, key:'tf_hc', cd:250, max:1, rate:lv >= 5 ? 1 : 1.25});
+      swEmit(['x', dqx(t0.x), dqy(t0.y), Math.round(a*100)/100, Math.round(L/S), warn, lv]); } }
+  return a0;
+}
+// one cut flash on a target: a thin diagonal shear, a white-red spark; the target reacts
+function swCut(x, y, a, e, big){ SW.nCut = WB_FX.reduce((n, f) => n + (f.k === 'cut'), 0); if (WB_FX.length > 150 || SW.nCut > (big ? 60 : 36)){ if (e && !e.dead) e.flash = Math.max(e.flash || 0, 0.1); return; } WB_FX.push({k:'cut', t:0, x, y, a, big:!!big, R:e ? e.r : 14*S});
+  if (e && !e.dead){ e.flash = Math.max(e.flash || 0, 0.1); } }
+
+// ---------- events between Duos partners ----------
+function swEmit(ev){ SW.outN++; SW.out.push([SW.outN].concat(ev)); while (SW.out.length > 6) SW.out.shift(); }
+{ const _dm = duoMe; duoMe = function(){ const o = _dm.apply(this, arguments); if (SW.out.length) o.wx = SW.out.slice(); return o; }; }
+{ const _dp = duoDrawPartner; duoDrawPartner = function(){ SW.inMate = true; try { return _dp.apply(this, arguments); } finally { SW.inMate = false; } }; }
+function swDuoIn(){
+  if (typeof DUO === 'undefined' || !DUO.on || !DUO.pl || !Array.isArray(DUO.pl.wx) || !SW.mate.r) return;
+  const L = DUO.pl.wx; let top = SW.inSeen, n = 0; const C2 = duoFromHost();
+  const maxId = L.reduce((m, e) => Math.max(m, Array.isArray(e) && Number.isFinite(e[0]) ? e[0] : 0), 0); if (maxId < SW.inSeen - 20) SW.inSeen = top = 0;   // the partner restarted
+  for (const e of L){ if (!Array.isArray(e) || !Number.isFinite(e[0]) || e[0] <= SW.inSeen || ++n > 8) continue; top = Math.max(top, e[0]); const [, ty] = e, num = i => Number.isFinite(+e[i]) ? +e[i] : 0;
+    if (ty === 'r'){ const c = {k:'rup', who:'mate', t:0, T:Math.min(0.7, Math.max(0.2, num(4))), lv:Math.max(1, Math.min(5, num(3) | 0)), a:num(2), d:Math.min(900, Math.max(60, num(5))), fired:false, snd:{}, cos:true}; WB_CASTS.push(c); SW.mate.act = c; }
+    else if (ty === 'f'){ const a = num(2), lv = Math.max(1, Math.min(5, num(3) | 0)), pat = String(e[4]), tx = C2.x(num(5)), tyy = C2.y(num(6));
+      swGest('mate', pat === 'dis' ? 'fore' : pat === 'cross' ? 'back' : 'flurry', a, 0.24);
+      const k = pat === 'sever4' ? 4 : pat === 'sever3' ? 3 : pat === 'dis2' || pat === 'cross' ? 2 : pat === 'barrage' ? 0 : 1;
+      for (let i=0;i<k;i++) WB_FX.push({k:'cslash', t:-(pat === 'cross' ? 0.06 : 0.04 + i*0.065), x:SW.mate.x, y:SW.mate.y - 8*S, tx, ty:tyy, tilt:pat === 'cross' ? (i ? -0.78 : 0.78) : [0.6, -0.45, 0.2, -0.75][i], cos:true});
+      if (k) swSnd('tyrant_slash_light_0' + (1 + (e[0] % 3)), {vol:0.18, key:'tf_mate', cd:60, max:2, x:SW.mate.x, vary:0.1}); }
+    else if (ty === 'x'){ const lv = Math.max(1, Math.min(5, num(7) | 0)); WB_FX.push({k:'exec', t:0, x:C2.x(num(2)), y:C2.y(num(3)), a:num(4), L:Math.min(400, num(5))*S, warn:Math.min(0.6, Math.max(0.1, num(6))), lv, cos:true, seed:e[0]*7}); swGest('mate', 'heavy', SW.mate.a, num(6) + 0.32, num(6)); }
+    else if (ty === 'w'){ WB_FX.push({k:'wide', t:0, x:C2.x(num(2)), y:C2.y(num(3)), a:num(4), L:Math.min(300, num(5))*S, warn:Math.min(0.4, Math.max(0.05, num(6))), spd:1500*S, dist:400*S, hit:new Set(), lv:3, cos:true, trail:[]}); swGest('mate', 'heavy', num(4), num(6) + 0.32, num(6)); }
+    else if (ty === 'b'){ WB_FX.push({k:'barrage', t:0, x:C2.x(num(2)), y:C2.y(num(3)), n:6, i:0, next:0.08, lv:5, cos:true}); } }
+  SW.inSeen = top;
+}
+
+// ---------- hooks: firing, simulation, poses ----------
+{ const _sp = shootPattern; shootPattern = function(fx, fy, tgt, s, dmgMul, src){
+    if (s && src === 'player' && s.id === 'celestialrupture'){ swRupCast(s, dmgMul, src); return Math.atan2(tgt.y - fy, tgt.x - fx); }
+    if (s && src === 'player' && s.id === 'tyrantsfang'){ const a = swFangFire(s, dmgMul, src); if (a != null) return a; }
+    return _sp.apply(this, arguments); }; }
+{ const _ws = wsfx; wsfx = function(name, wd){ if (wd && (wd.__id === 'celestialrupture' || wd.__id === 'tyrantsfang')) return; return _ws.apply(this, arguments); }; }
+function swPre(dt){
+  SW.fr++;
+  swDuoIn();
+  for (const c of WB_CASTS){ c.t += dt;
+    if (c.k === 'rup'){ const S_ = swRup(c); if (!c.fired) swRupSounds(c, S_); if (!c.fired && c.t >= c.T){ c.fired = true; c._fr = -1; swRupRelease(c); } else if (!c.fired) swRupParticles(c, S_, dt); }
+    if (c.k === 'fang' && !c.fired && c.t >= 0){ c.fired = true; c.fire(); } }
+  for (let i = WB_CASTS.length - 1; i >= 0; i--){ const c = WB_CASTS[i]; if (c.fired && (c.k === 'fang' || c.t > c.T + 0.26)) WB_CASTS.splice(i, 1); }
+  for (const who of ['me', 'mate']){ const g = SW[who].gest; if (g){ g.t += dt; if (g.t > g.dur) SW[who].gest = null; } const ac = SW[who].act; if (ac && (!WB_CASTS.includes(ac))) SW[who].act = null; }
+  // the purple sphere: wake, the wider hit sphere, the level-4 drag
+  for (const b of SW.sph){ if (b.dead) continue; const R = b.rup; R.lx = b.x; R.ly = b.y;
+    R.trail.unshift([b.x, b.y]); if (R.trail.length > (R.lv >= 5 ? 26 : R.lv >= 3 ? 20 : 15)) R.trail.pop();
+    for (const e of enemies){ if (e.dead || e.untargetable || b.hit.has(e)) continue; const rr = R.R + e.r; if ((e.x - b.x)**2 + (e.y - b.y)**2 < rr*rr){ b.hit.add(e); dealDamage(e, b.dmg, {proc:true, src:b.src, wid:b.wid}); e.flash = Math.max(e.flash || 0, 0.12); if (!e.attacks && !e.wb){ const d = Math.hypot(e.x - b.x, e.y - b.y) || 1; e.x += (e.x - b.x)/d*8*S; e.y += (e.y - b.y)/d*8*S; } } }
+    if (R.lv >= 4){ R.dragT -= dt; const DR = 70*S*R.big; for (const e of enemies){ if (e.dead || e.attacks || e.mir || e.untargetable) continue; const dx = b.x - e.x, dy = b.y - e.y, d = Math.hypot(dx, dy); if (d < DR && d > 4*S){ const f = Math.min(d, 220*S*dt); e.x += dx/d*f; e.y += dy/d*f; if (R.dragT <= 0) dealDamage(e, b.dmg*0.12, {noCrit:true, quiet:true, src:b.src, wid:b.wid}); } } if (R.dragT <= 0) R.dragT = 0.2; }
+    if (!swLow() && WB_PT.length < 440 && Math.random() < 0.8){ const a = Math.atan2(b.vy, b.vx) + Math.PI + rnd(-0.7, 0.7), sp = rnd(30, 90)*S; WB_PT.push({k:'w', x:b.x + rnd(-1, 1)*R.R*0.6, y:b.y + rnd(-1, 1)*R.R*0.6, vx:Math.cos(a)*sp, vy:Math.sin(a)*sp, life:0.35, max:0.35, col:Math.random() < 0.15 ? (Math.random() < 0.5 ? '#7FC4FF' : '#FF6A80') : '#B98CFF', r:rnd(1.2, 2.6)*S}); } }
+  // fx timers, heavy cuts, barrages, cosmetic replicas
+  for (const f of WB_FX){ f.t += dt;
+    if (f.k === 'rupboom' && !f.hit && f.t >= 0.07) swRupBoom(f);
+    else if (f.k === 'exec' && !f.done && f.t >= f.warn){ f.done = true; const dx = Math.cos(f.a), dy = Math.sin(f.a), x1 = f.x - dx*f.L, y1 = f.y - dy*f.L, x2 = f.x + dx*f.L, y2 = f.y + dy*f.L;
+      if (!f.cos){ let n = 0; for (const e of enemies){ if (e.dead || e.untargetable) continue; if (segDist(e.x, e.y, x1, y1, x2, y2) < e.r + 22*S){ dealDamage(e, f.dmg, {proc:n++ < 3, src:f.src, wid:'tyrantsfang', kind:'crit'}); swCut(e.x, e.y, f.a + rnd(-0.25, 0.25), e, true); } } shake = Math.max(shake, reduce ? 0 : (f.lv >= 5 ? 7 : 5)); }
+      const v = f.cos ? 0.3 : 1, mx = (x1 + x2)/2;
+      if (f.lv >= 5) swSnd('tyrant_execution_finish', {vol:0.8*v, key:'tf_exec', cd:250, max:1, x:mx, pri:3, group:null, budget:null});
+      else { swSnd('tyrant_heavy_release', {vol:0.7*v, key:'tf_hr', cd:200, max:1, x:mx, pri:3, group:null}); swSnd('tyrant_heavy_impact', {vol:0.6*v, key:'tf_hi', cd:200, max:1, x:mx, at:0.02, pri:3, group:null, budget:'boom'}); }
+      for (let i=0;i<(swLow() ? 6 : 14) && WB_PT.length < 460;i++){ const q = Math.random()*2 - 1, px = f.x + dx*f.L*q, py = f.y + dy*f.L*q, s2 = Math.random() < 0.5 ? 1 : -1, sp = rnd(90, 220)*S; WB_PT.push({k:'sliver', x:px, y:py, vx:-dy*sp*s2, vy:dx*sp*s2, a:f.a, life:0.22, max:0.22, col:'#FFD6DC', r:rnd(4, 9)*S}); } }
+    else if (f.k === 'wide' && f.t >= f.warn){ const d = Math.min(f.dist, (f.t - f.warn)*f.spd), dx = Math.cos(f.a), dy = Math.sin(f.a), cx = f.x + dx*d, cy = f.y + dy*d;
+      if (!f.rel){ f.rel = true; const v = f.cos ? 0.3 : 1; swSnd('tyrant_heavy_release', {vol:0.6*v, key:'tf_hr', cd:200, max:1, x:f.x, pri:3, group:null, rate:0.9}); }
+      f.trail.unshift([cx, cy]); if (f.trail.length > 4) f.trail.pop();
+      if (!f.cos && d < f.dist){ const x1 = cx - dy*f.L, y1 = cy + dx*f.L, x2 = cx + dy*f.L, y2 = cy - dx*f.L;
+        for (const e of enemies){ if (e.dead || e.untargetable || f.hit.has(e)) continue; if (segDist(e.x, e.y, x1, y1, x2, y2) < e.r + 16*S){ f.hit.add(e); dealDamage(e, f.dmg, {proc:f.hit.size <= 3, src:f.src, wid:'tyrantsfang'}); swCut(e.x, e.y, f.a + Math.PI/2 + rnd(-0.3, 0.3), e, true);
+          if (f.hit.size === 1) swSnd('tyrant_heavy_impact', {vol:0.55, key:'tf_hi', cd:200, max:1, x:e.x, pri:3, group:null, budget:'boom'}); } } } }
+    else if (f.k === 'barrage' && f.i < f.n && f.t >= f.next){ f.next += 0.045; f.i++;
+      const pool = enemies.filter(e => !e.dead && !e.untargetable && (e.x - f.x)**2 + (e.y - f.y)**2 < (120*S)**2); const e = pool.length ? pool[(f.i*7) % pool.length] : null;
+      const x = e ? e.x : f.x + rnd(-50, 50)*S, y = e ? e.y : f.y + rnd(-50, 50)*S;
+      if (!f.cos && e) dealDamage(e, f.dmg, {proc:f.i <= 2, src:f.src, wid:'tyrantsfang'});
+      swCut(x, y, rnd(0, Math.PI), f.cos ? null : e, f.i === f.n);
+      if (f.i % 2) swSnd('tyrant_slash_impact', {vol:(f.cos ? 0.12 : 0.3), key:'tf_imp', cd:35, max:3, x, vary:0.15, budget:'hit'}); }
+    else if (f.k === 'cslash' && f.t >= 0){ const sp = 900*S, d = Math.hypot(f.tx - f.x, f.ty - f.y), tt = d/sp; if (f.t >= tt && !f.done){ f.done = true; swCut(f.tx, f.ty, Math.atan2(f.ty - f.y, f.tx - f.x) + Math.PI/2 + f.tilt, null); } }
+    else if (f.k === 'csph'){ f.x += f.vx*dt; f.y += f.vy*dt; f.trail.unshift([f.x, f.y]); if (f.trail.length > 18) f.trail.pop(); if (f.t >= f.life && !f.done){ f.done = true; swRupImpact(f.x, f.y, WPN.celestialrupture.aoe*S*(f.lv >= 5 ? 1.8 : 1.15), f.lv, 0, null, true); } }
+  }
+  const life = f => f.k === 'exec' ? f.warn + 0.32 : f.k === 'rupboom' ? 0.95 : f.k === 'wide' ? f.warn + f.dist/f.spd + 0.15 : f.k === 'barrage' ? 0.6 : f.k === 'cslash' ? 0.7 : f.k === 'csph' ? f.life + 0.02 : f.k === 'cut' ? (f.big ? 0.3 : 0.22) : 0.3;
+  for (let i = WB_FX.length - 1; i >= 0; i--) if (WB_FX[i].t > life(WB_FX[i])) WB_FX.splice(i, 1);
+}
+function swPost(dt){
+  // the sphere hit its end: hold it for a beat (compressed and bright), then burst
+  for (const b of SW.sph){ if (!b.dead || b.rup.done) continue; b.rup.done = true; swKill(b.rup.loop); swRupImpact(b.rup.lx, b.rup.ly, b.rup.aoe, b.rup.lv, b.dmg*1.1, b.src, false); }
+  SW.sph = SW.sph.filter(b => !b.dead);
+  // fang hits: a cut across each new target at the slash's own angle (so a Cross Slash leaves an X)
+  for (const b of SW.fb){ const F = b.fang; if (b.hit.size > F.nh){ let i = 0; for (const e of b.hit){ if (i++ < F.nh) continue; const a = Math.atan2(b.vy, b.vx) + Math.PI/2 + F.tilt;
+        swCut(e.x, e.y, a, e); if (!e.attacks && !e.wb){ e.x += b.vx*0.006; e.y += b.vy*0.006; }
+        swSnd('tyrant_slash_impact', {x:e.x, vol:0.32, key:'tf_imp', cd:35, max:3, vary:0.15, budget:'hit', dk:0.35}); } F.nh = b.hit.size; } }
+  // the fang's wider arcs (level 3+) cover a broader band
+  SW.fb = SW.fb.filter(b => !b.dead);
+  for (const b of SW.fb){ if (!b.fang.wide) continue; for (const e of enemies){ if (e.dead || e.untargetable || b.hit.has(e)) continue; if ((e.x - b.x)**2 + (e.y - b.y)**2 < (e.r + 20*S)**2){ b.hit.add(e); dealDamage(e, b.dmg, {proc:true, src:b.src, wid:b.wid}); swCut(e.x, e.y, Math.atan2(b.vy, b.vx) + Math.PI/2 + b.fang.tilt, e); b.fang.nh = b.hit.size; } } }
+  for (const p of WB_PT){ if (p.k === 'in'){ p.rad -= p.vr*dt; p.ang += p.va*dt; if (p.rad < p.min) p.life = 0; } else if (p.k === 'out') p.rad += p.vr*dt;
+    if (p.k === 'w' || p.k === 'sliver'){ p.x += p.vx*dt; p.y += p.vy*dt; const dr = Math.exp(-dt*4); p.vx *= dr; p.vy *= dr; } p.life -= dt; }
+  for (let i = WB_PT.length - 1; i >= 0; i--) if (WB_PT[i].life <= 0) WB_PT.splice(i, 1);
+}
+// blue pulls particles in along spirals; red throws them out; both follow their orb wherever it goes
+function swRupParticles(c, S_, dt){
+  if (WB_PT.length > 420) return; const lowK = swLow() ? 0.4 : 1, mate = c.who === 'mate' ? 0.6 : 1, lvK = c.lv >= 5 ? 1.5 : 1;
+  if (S_.pb && S_.u < RU.hit){ let n = 46*dt*lowK*mate*lvK; while (n > 0){ if (Math.random() < n) WB_PT.push({k:'in', c, orb:'b', rad:S_.ob*(2.6 + Math.random()*1.6), ang:Math.random()*TAU, vr:(55 + Math.random()*40)*S, va:3.2 + Math.random()*2, min:S_.ob*0.45, life:0.6, max:0.6, col:Math.random() < 0.25 ? '#FFFFFF' : '#6CC3FF', r:(0.9 + Math.random()*1.2)*S}); n -= 1; } }
+  if (S_.pr && S_.u < RU.hit){ let n = 40*dt*lowK*mate*lvK; while (n > 0){ if (Math.random() < n) WB_PT.push({k:'out', c, orb:'r', rad:S_.ob*0.7, ang:Math.random()*TAU, vr:(70 + Math.random()*70)*S, va:0, life:0.32, max:0.32, col:Math.random() < 0.3 ? '#FFE0E4' : '#FF2E4A', r:(0.9 + Math.random()*1.3)*S, spark:Math.random() < 0.3}); n -= 1; } }
+  if (S_.pr && !reduce && c.who === 'me' && S_.u < RU.hit) shake = Math.max(shake, 0.9);   // a slight, constant tremor while red is held
+}
+{ const _up = update; update = function(dt){
+    try { if (run && state === 'play') swPre(dt); } catch(err){ console.error(err); }
+    const r = _up.apply(this, arguments);
+    try { if (run && state === 'play') swPost(dt); } catch(err){ console.error(err); }
+    return r; }; }
+// poses: the player (and the Duos partner) perform the techniques with their own arms; secret weapons are never held
+function swPoseFor(who, A){
+  const act = SW[who].act, g = SW[who].gest;
+  if (act && act.k === 'rup' && act.t < act.T + 0.24){ const S_ = swRup(act); return {f:S_.hf, b:S_.hb, lean:S_.lean, prop:null, pa:0, spark:0, look:0}; }
+  if (g){ const q = swFangPose(g, A); return {f:q.f, b:q.b, lean:q.lean, prop:null, pa:0, spark:0, look:0}; }
+  return null;
+}
+{ const _db = drawBlob; drawBlob = function(c, x, y, r, skinId, aim, g, wId, now, alpha, look){
+    try {
+      const secret = wId === 'celestialrupture' || wId === 'tyrantsfang';
+      let who = null; if (run && P && x === P.x && y === P.y && Math.abs(r - P.r*S) < 0.01) who = 'me'; else if (SW.inMate) who = 'mate';
+      if (who === 'mate'){ const an = (look && look.anim) || {}; Object.assign(SW.mate, {x, y, r, a:aim || 0, walk:an.walk || 0, mv:!!an.moving}); }
+      const pz = who ? swPoseFor(who, swActor(who)) : null;
+      if (pz){ wId = null; look = Object.assign({}, look || {}, {pose:pz}); } else if (secret) wId = null;
+    } catch(e){ console.error(e); }
+    return _db.call(this, c, x, y, r, skinId, aim, g, wId, now, alpha, look); }; }
+
+// ---------- drawing ----------
+function swGlow(c, x, y, r, stops){ const g = c.createRadialGradient(x, y, 0, x, y, r); for (const [k, col] of stops) g.addColorStop(k, col); c.fillStyle = g; c.beginPath(); c.arc(x, y, r, 0, TAU); c.fill(); }
+function swBlue(c, x, y, r, now, lvBright){
+  c.save(); c.globalCompositeOperation = 'lighter';
+  c.globalCompositeOperation = 'source-over'; swGlow(c, x, y, r*3, [[0, 'rgba(20,70,220,' + (0.5*lvBright) + ')'], [0.5, 'rgba(10,40,170,.18)'], [1, 'rgba(10,20,120,0)']]); c.globalCompositeOperation = 'lighter';
+  // the compressed-space ripple, closing in
+  for (let i=0;i<2;i++){ const k = ((now*1.6 + i*0.5) % 1); c.globalAlpha = 0.45*k; c.strokeStyle = '#7CC8FF'; c.lineWidth = 1.2*S; c.beginPath(); c.arc(x, y, r*(3.3 - 2.4*k), 0, TAU); c.stroke(); }
+  // curved streaks spiralling into the centre
+  c.globalAlpha = 0.85; c.lineCap = 'round';
+  for (let i=0;i<5;i++){ const a0 = now*-7 + i*TAU/5; c.strokeStyle = i % 2 ? '#BFE4FF' : '#3FA0FF'; c.lineWidth = 1.3*S; c.beginPath();
+    for (let j=0;j<=10;j++){ const t = j/10, rr = r*(2.7 - 1.9*t), a = a0 + t*2.2; j ? c.lineTo(x + Math.cos(a)*rr, y + Math.sin(a)*rr) : c.moveTo(x + Math.cos(a)*rr, y + Math.sin(a)*rr); } c.stroke(); }
+  c.restore();
+  // dark core, electric rim, a pin-point of light
+  c.save(); swGlow(c, x, y, r*1.15, [[0, '#050B2A'], [0.55, '#0B1F66'], [0.8, '#2F7BFF'], [0.92, '#BFE6FF'], [1, 'rgba(120,190,255,0)']]);
+  c.globalCompositeOperation = 'lighter'; c.globalAlpha = 0.9; c.strokeStyle = '#E2F3FF'; c.lineWidth = 1.4*S; c.beginPath(); c.arc(x, y, r*0.88, now*9, now*9 + 4.2); c.stroke();
+  c.fillStyle = '#FFFFFF'; c.beginPath(); c.arc(x + r*0.18, y - r*0.18, Math.max(1, r*0.16), 0, TAU); c.fill(); c.restore();
+}
+function swRed(c, x, y, r, now, lvBright){
+  const pulse = 1 + 0.16*Math.sin(now*34) + 0.06*Math.sin(now*71), rr = r*pulse;
+  c.save(); c.globalCompositeOperation = 'lighter';
+  c.globalCompositeOperation = 'source-over'; swGlow(c, x, y, rr*2.8, [[0, 'rgba(230,10,40,' + (0.5*lvBright) + ')'], [0.5, 'rgba(190,0,30,.2)'], [1, 'rgba(120,0,20,0)']]); c.globalCompositeOperation = 'lighter';
+  // concentric ripples pushing outward
+  for (let i=0;i<3;i++){ const k = ((now*2.4 + i/3) % 1); c.globalAlpha = 0.6*(1 - k); c.strokeStyle = i % 2 ? '#FF7A8A' : '#FF2E4A'; c.lineWidth = 1.5*S*(1 - k*0.6); c.beginPath(); c.arc(x, y, rr*(1 + 2.4*k), 0, TAU); c.stroke(); }
+  // sharp crimson sparks
+  c.globalAlpha = 0.9; c.strokeStyle = '#FFC2CA'; c.lineWidth = 1.1*S; c.lineCap = 'round'; for (let i=0;i<4;i++){ const a = (Math.floor(now*20) * 2.39 + i*1.7) % TAU, l0 = rr*1.25, l1 = rr*(1.8 + ((now*13 + i) % 1)*0.8); c.beginPath(); c.moveTo(x + Math.cos(a)*l0, y + Math.sin(a)*l0); c.lineTo(x + Math.cos(a)*l1, y + Math.sin(a)*l1); c.stroke(); }
+  c.restore();
+  c.save(); swGlow(c, x, y, rr*1.1, [[0, '#FFFFFF'], [0.25, '#FFD0D6'], [0.55, '#FF2E4A'], [0.85, '#B0001C'], [1, 'rgba(255,40,70,0)']]); c.restore();
+}
+function swPurple(c, x, y, R, now, lv, a){
+  const dense = lv >= 5 ? 1.25 : 1;
+  c.save(); c.globalCompositeOperation = 'lighter';
+  c.globalCompositeOperation = 'source-over'; swGlow(c, x, y, R*2.3, [[0, 'rgba(110,40,220,' + (0.55*dense) + ')'], [0.45, 'rgba(80,20,180,.25)'], [1, 'rgba(50,0,120,0)']]); c.globalCompositeOperation = 'lighter';
+  // spatial distortion: two faint wobbling shells
+  for (let i=0;i<2;i++){ c.globalAlpha = 0.18; c.strokeStyle = '#E6D8FF'; c.lineWidth = 1*S; c.beginPath(); for (let j=0;j<=24;j++){ const t = j/24*TAU, rr = R*(1.45 + i*0.35 + 0.06*Math.sin(t*5 + now*(9 + i*4))); j ? c.lineTo(x + Math.cos(t)*rr, y + Math.sin(t)*rr) : c.moveTo(x + Math.cos(t)*rr, y + Math.sin(t)*rr); } c.closePath(); c.stroke(); }
+  c.restore();
+  c.save(); swGlow(c, x, y, R*1.08, [[0, '#FFFFFF'], [0.16, '#F1E6FF'], [0.42, '#A45CFF'], [0.72, '#5A14C8'], [0.92, '#2A0670'], [1, 'rgba(120,60,255,0)']]);
+  // turbulence across the surface: dark swirling shadows and bright filaments
+  c.lineCap = 'round';
+  for (let i=0;i<5;i++){ const a0 = now*(5 + i*1.7)*(i % 2 ? 1 : -1) + i*1.3, rr = R*(0.45 + 0.1*i); c.globalAlpha = 0.55; c.strokeStyle = i % 2 ? 'rgba(40,0,90,.9)' : '#D9B8FF'; c.lineWidth = (i % 2 ? 2.4 : 1.2)*S; c.beginPath(); c.arc(x, y, rr, a0, a0 + 1.3 + 0.4*Math.sin(now*7 + i)); c.stroke(); }
+  // thin blue and red remnants still orbiting
+  c.globalCompositeOperation = 'lighter'; c.globalAlpha = 0.85; c.lineWidth = 1.3*S;
+  c.strokeStyle = '#5FB6FF'; c.beginPath(); c.ellipse(x, y, R*1.18, R*0.55, now*6, 0, 2.2); c.stroke();
+  c.strokeStyle = '#FF4C66'; c.beginPath(); c.ellipse(x, y, R*1.18, R*0.55, now*6 + Math.PI/2, Math.PI, Math.PI + 2.2); c.stroke();
+  c.fillStyle = '#FFFFFF'; c.globalAlpha = 0.9; c.beginPath(); c.arc(x - R*0.2, y - R*0.22, R*0.17, 0, TAU); c.fill();
+  c.restore();
+}
+// the wake: a ribbon that narrows and dissolves, with a turbulent wobble (never a straight laser)
+function swWake(c, trail, R, now, lv){
+  if (trail.length < 3) return; c.save(); c.globalCompositeOperation = 'lighter'; c.lineCap = 'round';
+  const n = trail.length;
+  for (let i=1;i<n;i++){ const k = 1 - i/n, [x0, y0] = trail[i - 1], [x1, y1] = trail[i], dx = x1 - x0, dy = y1 - y0, d = Math.hypot(dx, dy) || 1, wob = Math.sin(i*0.9 - now*24)*R*0.32*(1 - k*0.5), nx = -dy/d*wob, ny = dx/d*wob;
+    c.globalCompositeOperation = 'source-over'; c.globalAlpha = Math.min(0.85, 0.6*k*(lv >= 5 ? 1.2 : 1)); c.strokeStyle = i % 3 === 0 ? '#2A0866' : i % 3 === 1 ? '#6A2BD9' : '#4A16A8'; c.lineWidth = R*1.7*Math.pow(k, 1.15); c.beginPath(); c.moveTo(x0 + nx*0.6, y0 + ny*0.6); c.lineTo(x1 + nx, y1 + ny); c.stroke();
+    if (i % 2 === 0){ c.globalCompositeOperation = 'lighter'; c.globalAlpha = 0.45*k; c.strokeStyle = '#C9A2FF'; c.lineWidth = Math.max(1, R*0.32*k); c.beginPath(); c.moveTo(x0 - nx*0.8, y0 - ny*0.8); c.lineTo(x1 - nx, y1 - ny); c.stroke(); } }
+  c.restore();
+}
+function swCastFx(c, k, now){
+  const S_ = swRup(k), u = S_.u, bright = k.lv >= 5 ? 1.35 : 1;
+  if (k.fired){ return; }
+  // the intertwining blue/red spiral while they orbit
+  if (S_.spin != null){ (k.hb_t = k.hb_t || []).unshift(S_.pb.slice()); (k.hr_t = k.hr_t || []).unshift(S_.pr.slice()); if (k.hb_t.length > 12){ k.hb_t.pop(); k.hr_t.pop(); }
+    c.save(); c.globalCompositeOperation = 'lighter'; c.lineCap = 'round'; for (const [T, col] of [[k.hb_t, '#4FA8FF'], [k.hr_t, '#FF3B57']]){ for (let i=1;i<T.length;i++){ c.globalAlpha = 0.7*(1 - i/T.length); c.strokeStyle = col; c.lineWidth = S_.ob*0.9*(1 - i/T.length); c.beginPath(); c.moveTo(T[i - 1][0], T[i - 1][1]); c.lineTo(T[i][0], T[i][1]); c.stroke(); } } c.restore(); }
+  if (S_.pb){ const grow = Math.min(1, u/(RU.red*0.8)); swBlue(c, S_.pb[0], S_.pb[1], S_.ob*Math.max(0.25, grow)*(S_.k != null ? 1 - 0.35*S_.k : 1), now, bright); }
+  if (S_.pr){ const grow = Math.min(1, (u - RU.red)/(RU.red*0.8)); swRed(c, S_.pr[0], S_.pr[1], S_.ob*Math.max(0.25, grow)*(S_.k != null ? 1 - 0.35*S_.k : 1), now, bright); }
+  if (S_.core){ const fl = u < RU.form + 0.02 ? 1 - (u - RU.hit)/(RU.form + 0.02 - RU.hit) : 0;
+    if (fl > 0){ c.save(); c.globalCompositeOperation = 'lighter'; c.globalAlpha = Math.min(1, fl*1.2); swGlow(c, S_.core[0], S_.core[1], 20*S*(1 + 0.6*(1 - fl)), [[0, '#FFFFFF'], [0.4, 'rgba(255,255,255,.7)'], [1, 'rgba(220,200,255,0)']]); c.restore(); }
+    swPurple(c, S_.core[0], S_.core[1], Math.max(2*S, S_.coreR), now, k.lv, k.a); }
+}
+function swDrawPts(c){
+  c.save(); c.globalCompositeOperation = 'lighter';
+  for (const p of WB_PT){ const k = Math.max(0, p.life/p.max);
+    if (p.k === 'in' || p.k === 'out'){ const S_ = p.c && WB_CASTS.includes(p.c) && !p.c.fired ? swRup(p.c) : null; if (!S_){ p.life = 0; continue; }
+      const o = p.orb === 'b' ? (S_.pb || S_.core) : (S_.pr || S_.core); if (!o){ p.life = 0; continue; }
+      const x = o[0] + Math.cos(p.ang)*p.rad, y = o[1] + Math.sin(p.ang)*p.rad;
+      c.globalAlpha = p.k === 'in' ? Math.min(1, 1.4 - p.rad/(S_.ob*4)) : k; c.strokeStyle = p.col; c.lineWidth = p.r; c.lineCap = 'round';
+      const tl = p.k === 'in' ? -1 : 1, l = p.spark ? 7*S : 3.5*S; c.beginPath(); c.moveTo(x, y); c.lineTo(x - Math.cos(p.ang)*l*tl + (p.k === 'in' ? Math.sin(p.ang)*l*0.8 : 0), y - Math.sin(p.ang)*l*tl - (p.k === 'in' ? Math.cos(p.ang)*l*0.8 : 0)); c.stroke(); }
+    else if (p.k === 'w'){ c.globalAlpha = k; c.fillStyle = p.col; c.beginPath(); c.arc(p.x, p.y, p.r*(0.5 + 0.5*k), 0, TAU); c.fill(); }
+    else if (p.k === 'sliver'){ c.globalAlpha = k; c.strokeStyle = p.col; c.lineWidth = 1.2*S; c.beginPath(); c.moveTo(p.x - Math.cos(p.a)*p.r, p.y - Math.sin(p.a)*p.r); c.lineTo(p.x + Math.cos(p.a)*p.r, p.y + Math.sin(p.a)*p.r); c.stroke(); } }
+  c.restore();
+}
+// a jagged tear along a line (seeded, so it doesn't flicker)
+function swTear(c, x1, y1, x2, y2, amp, seed){ const n = 14, dx = x2 - x1, dy = y2 - y1, d = Math.hypot(dx, dy) || 1, nx = -dy/d, ny = dx/d; c.beginPath(); c.moveTo(x1, y1);
+  for (let i=1;i<n;i++){ const t = i/n, j = Math.sin(seed*13.1 + i*7.7)*amp*Math.sin(t*Math.PI); c.lineTo(x1 + dx*t + nx*j, y1 + dy*t + ny*j); } c.lineTo(x2, y2); }
+function swDrawFx(c, now){
+  for (const f of WB_FX){
+    if (f.k === 'rupboom'){ const t = f.t, R = f.r, lvK = f.lv >= 5 ? 1.25 : 1; c.save();
+      if (t < 0.07){ const k = t/0.07; swPurple(c, f.x, f.y, 14*S*(1 - 0.4*k)*lvK, now, f.lv, 0); c.globalCompositeOperation = 'lighter'; c.globalAlpha = k; swGlow(c, f.x, f.y, 18*S*lvK, [[0, '#FFFFFF'], [1, 'rgba(255,255,255,0)']]); }
+      else { const k = (t - 0.07)/0.88; c.globalCompositeOperation = 'lighter';
+        if (k < 0.18){ c.globalAlpha = 1 - k/0.18; swGlow(c, f.x, f.y, R*0.75, [[0, '#FFFFFF'], [0.35, 'rgba(235,215,255,.9)'], [1, 'rgba(170,110,255,0)']]); }
+        c.globalCompositeOperation = 'source-over';
+        if (k < 0.4){ c.globalAlpha = 0.45*(1 - k/0.4); swGlow(c, f.x, f.y, R*(0.5 + 0.7*k), [[0, 'rgba(150,80,255,.9)'], [0.6, 'rgba(90,20,200,.6)'], [1, 'rgba(60,0,150,0)']]); }
+        c.globalAlpha = Math.max(0, 1 - k*1.3); c.strokeStyle = '#7A2CFF'; c.lineWidth = 9*S*(1 - k)*lvK; c.beginPath(); c.arc(f.x, f.y, R*(0.25 + 1.05*Math.sqrt(k)), 0, TAU); c.stroke();
+        c.globalCompositeOperation = 'lighter'; c.globalAlpha = Math.max(0, 0.8 - k); c.strokeStyle = '#E2CCFF'; c.lineWidth = 2*S*(1 - k)*lvK; c.stroke(); c.globalCompositeOperation = 'source-over';
+        for (let i=0;i<3;i++){ const kk = Math.min(1, k*(1.25 - i*0.18)); c.globalAlpha = Math.max(0, 0.75 - kk)*0.9; c.strokeStyle = ['#5A14C8', '#2F7BFF', '#E0283C'][i]; c.lineWidth = (3 - i*0.6)*S; c.beginPath();
+          for (let j=0;j<=28;j++){ const a = j/28*TAU, rr = R*(0.2 + kk*(0.95 + i*0.12))*(1 + 0.08*Math.sin(a*6 + i*2 + now*14)); j ? c.lineTo(f.x + Math.cos(a)*rr, f.y + Math.sin(a)*rr) : c.moveTo(f.x + Math.cos(a)*rr, f.y + Math.sin(a)*rr); } c.closePath(); c.stroke(); }
+        c.globalCompositeOperation = 'source-over'; c.globalAlpha = 0.16*(1 - k); c.strokeStyle = '#EDE4FF'; c.lineWidth = 1*S; for (let i=0;i<2;i++){ c.beginPath(); c.arc(f.x, f.y, R*(1.2 + 0.5*k + i*0.25), 0, TAU); c.stroke(); } }
+      c.restore(); }
+    else if (f.k === 'csph'){ swWake(c, f.trail, f.R, now, f.lv); swPurple(c, f.x, f.y, f.R, now, f.lv, 0); }
+    else if (f.k === 'cslash' && f.t >= 0 && !f.done){ const a = Math.atan2(f.ty - f.y, f.tx - f.x), d = f.t*900*S, x = f.x + Math.cos(a)*d, y = f.y + Math.sin(a)*d; swShear(c, x, y, a, f.tilt, false, 0.7); }
+    else if (f.k === 'exec'){ const dx = Math.cos(f.a), dy = Math.sin(f.a), x1 = f.x - dx*f.L, y1 = f.y - dy*f.L, x2 = f.x + dx*f.L, y2 = f.y + dy*f.L; c.save(); c.lineCap = 'round';
+      if (f.t < f.warn){ const k = f.t/f.warn; c.globalAlpha = (0.25 + 0.6*k)*(0.75 + 0.25*Math.sin(now*60)); c.strokeStyle = '#7A0A18'; c.lineWidth = 1*S; c.beginPath(); c.moveTo(x1, y1); c.lineTo(x2, y2); c.stroke();
+        c.globalAlpha = 0.18*k; c.strokeStyle = '#FF2E4A'; c.lineWidth = 1*S; for (const o of [-1, 1]){ c.beginPath(); c.moveTo(x1 - dy*o*12*S*(1 - k), y1 + dx*o*12*S*(1 - k)); c.lineTo(x2 - dy*o*12*S*(1 - k), y2 + dx*o*12*S*(1 - k)); c.stroke(); } }
+      else { const k = 1 - (f.t - f.warn)/0.32; c.globalCompositeOperation = 'lighter';
+        c.globalAlpha = 0.45*k; c.strokeStyle = '#FF1E3C'; c.lineWidth = 10*S*k*(f.lv >= 5 ? 1.3 : 1); swTear(c, x1, y1, x2, y2, 3*S, f.seed); c.stroke();
+        c.globalAlpha = k; c.strokeStyle = '#FFFFFF'; c.lineWidth = 2.6*S*k + 0.6; swTear(c, x1, y1, x2, y2, 3*S, f.seed); c.stroke();
+        c.globalCompositeOperation = 'source-over'; c.globalAlpha = 0.5*k; c.strokeStyle = '#2A0006'; c.lineWidth = 1.2*S; c.beginPath(); c.moveTo(x1 - dy*4*S*(1 - k), y1 + dx*4*S*(1 - k)); c.lineTo(x2 - dy*4*S*(1 - k), y2 + dx*4*S*(1 - k)); c.stroke(); }
+      c.restore(); }
+    else if (f.k === 'wide'){ c.save(); c.lineCap = 'round'; const dx = Math.cos(f.a), dy = Math.sin(f.a);
+      if (f.t < f.warn){ const k = f.t/f.warn; c.globalAlpha = 0.4*k; c.strokeStyle = '#7A0A18'; c.lineWidth = 1.2*S; c.beginPath(); c.arc(f.x, f.y, 40*S + 30*S*k, f.a - 1, f.a + 1); c.stroke(); }
+      else if (f.trail.length){ const fade = f.t > f.warn + f.dist/f.spd ? Math.max(0, 1 - (f.t - f.warn - f.dist/f.spd)/0.15) : 1;
+        f.trail.forEach(([cx, cy], i) => { const k = (1 - i/4)*fade; c.globalCompositeOperation = 'lighter'; c.globalAlpha = (i ? 0.25 : 0.55)*k; c.strokeStyle = '#FF1E3C'; c.lineWidth = (i ? 3 : 8)*S;
+          c.beginPath(); c.moveTo(cx - dy*f.L, cy + dx*f.L); c.quadraticCurveTo(cx + dx*f.L*0.28, cy + dy*f.L*0.28, cx + dy*f.L, cy - dx*f.L); c.stroke();
+          if (!i){ c.globalAlpha = k; c.strokeStyle = '#FFFFFF'; c.lineWidth = 2*S; c.stroke(); } }); }
+      c.restore(); }
+    else if (f.k === 'cut'){ const life = f.big ? 0.3 : 0.22, k = 1 - f.t/life, L = f.R*(f.big ? 1.6 : 1.25) + 6*S, dx = Math.cos(f.a), dy = Math.sin(f.a), sep = (1 - k)*3*S; c.save(); c.lineCap = 'round';
+      c.globalCompositeOperation = 'lighter'; c.globalAlpha = 0.35*k; c.strokeStyle = '#FF1E3C'; c.lineWidth = (f.big ? 7 : 5)*S*k; c.beginPath(); c.moveTo(f.x - dx*L, f.y - dy*L); c.lineTo(f.x + dx*L, f.y + dy*L); c.stroke();
+      c.globalAlpha = k; c.strokeStyle = '#FFFFFF'; c.lineWidth = (f.big ? 2.4 : 1.6)*S*Math.max(0.3, k); for (const o of [-1, 1]){ c.beginPath(); c.moveTo(f.x - dx*L - dy*sep*o, f.y - dy*L + dx*sep*o); c.lineTo(f.x + dx*L - dy*sep*o, f.y + dy*L + dx*sep*o); c.stroke(); }
+      if (f.t < 0.1){ const s2 = (f.big ? 9 : 6)*S*(1 - f.t/0.1*0.3); c.globalAlpha = 1 - f.t/0.1; c.fillStyle = '#FFE6EA'; c.beginPath(); c.moveTo(f.x - s2, f.y); c.lineTo(f.x, f.y - s2*0.25); c.lineTo(f.x + s2, f.y); c.lineTo(f.x, f.y + s2*0.25); c.closePath(); c.fill(); c.beginPath(); c.moveTo(f.x, f.y - s2*0.7); c.lineTo(f.x + s2*0.2, f.y); c.lineTo(f.x, f.y + s2*0.7); c.lineTo(f.x - s2*0.2, f.y); c.closePath(); c.fill(); }
+      c.restore(); }
+  }
+}
+// the travelling cut: a thin curved shear, nearly clear in the middle, a faint crimson edge, a short dark-red afterimage
+function swShear(c, x, y, a, tilt, wide, alpha){
+  const h = (wide ? 24 : 15)*S; c.save(); c.translate(x, y); c.rotate(a); c.lineCap = 'round'; c.globalAlpha = alpha;
+  const arc = (dx, w, col, al) => { c.globalAlpha = alpha*al; c.strokeStyle = col; c.lineWidth = w; c.beginPath(); c.moveTo(dx - Math.sin(tilt)*h, -h*Math.cos(tilt)); c.quadraticCurveTo(dx + 7*S, 0, dx + Math.sin(tilt)*h, h*Math.cos(tilt)); c.stroke(); };
+  arc(-20*S, 1*S, '#4A0510', 0.22); arc(-10*S, 1.2*S, '#7A0A18', 0.35);
+  arc(0, 5*S, 'rgba(255,255,255,1)', 0.1); arc(0, 1.1*S, '#FF2E4A', 0.65); arc(0.8*S, 0.6*S, '#FFFFFF', 0.55);
+  c.restore();
+}
+{ const _v2 = drawVis2; drawVis2 = function(b, now){
+    if (b.vis === 'rupture'){ const R = b.rup || {lv:1, R:13*S, trail:[]}; swWake(ctx, R.trail, R.R, now, R.lv); swPurple(ctx, b.x, b.y, R.R, now, R.lv, Math.atan2(b.vy, b.vx));
+      if (R.lv >= 4){ ctx.save(); ctx.globalAlpha = 0.22; ctx.strokeStyle = '#7FC4FF'; ctx.lineWidth = 1.2*S; ctx.setLineDash([4*S, 6*S]); circle(ctx, b.x, b.y, 70*S*R.big); ctx.stroke(); ctx.restore(); }
+      return true; }
+    if (b.vis === 'fang'){ swShear(ctx, b.x, b.y, Math.atan2(b.vy, b.vx), b.fang ? b.fang.tilt : 0, b.fang && b.fang.wide, 0.85); return true; }
+    return _v2.apply(this, arguments); }; }
+// the cutting hand: two fingers out, a crimson glint as the wrist snaps; a dark-red pulse while a heavy cut gathers
+function swHandFx(c, who, now){
+  const g = SW[who].gest; if (!g) return; const A = swActor(who), q = swFangPose(g, A), h = swW(A, q.f, q.lean);
+  const k = g.t/g.dur, snapping = g.style === 'heavy' ? g.t >= g.warn && g.t < g.warn + 0.12 : k > 0.25 && k < 0.6;
+  c.save(); c.lineCap = 'round';
+  const a = g.a + (g.style === 'back' ? -0.5 : 0.4), L = 7*S; c.strokeStyle = '#F4D9C8'; c.lineWidth = 1.6*S; c.globalAlpha = 0.9;
+  for (const o of [-1.2, 1.2]){ c.beginPath(); c.moveTo(h[0] - Math.sin(a)*o*S, h[1] + Math.cos(a)*o*S); c.lineTo(h[0] + Math.cos(a)*L - Math.sin(a)*o*S, h[1] + Math.sin(a)*L + Math.cos(a)*o*S); c.stroke(); }
+  if (snapping){ c.globalCompositeOperation = 'lighter'; c.globalAlpha = 0.8; c.strokeStyle = '#FF2E4A'; c.lineWidth = 1.3*S; c.beginPath(); c.arc(A.x, A.y - 6*S, 30*S, g.a - 1, g.a + 1); c.stroke();
+    swGlow(c, h[0] + Math.cos(a)*L, h[1] + Math.sin(a)*L, 7*S, [[0, '#FFFFFF'], [0.4, 'rgba(255,60,90,.7)'], [1, 'rgba(255,0,40,0)']]); }
+  if (g.style === 'heavy' && g.t < g.warn){ const p = g.t/g.warn; c.globalCompositeOperation = 'lighter'; c.globalAlpha = 0.35 + 0.45*p; swGlow(c, h[0], h[1], (8 + 10*p)*S*(0.85 + 0.15*Math.sin(now*30)), [[0, 'rgba(255,90,110,.9)'], [0.5, 'rgba(140,0,20,.5)'], [1, 'rgba(80,0,10,0)']]); }
+  c.restore();
+}
+{ const _dr = draw; draw = function(now){ const r = _dr.apply(this, arguments);
+    try { if (run && ['play', 'paused', 'levelup', 'chest', 'clear', 'results'].includes(state)){ const c = ctx; swDrawFx(c, now); for (const k of WB_CASTS) if (k.k === 'rup') swCastFx(c, k, now); swDrawPts(c); swHandFx(c, 'me', now); if (SW.mate.r) swHandFx(c, 'mate', now); } } catch(err){ console.error(err); }
+    return r; }; }
+// between runs: nothing carries over
+{ const _ss = startStage; startStage = function(){ WB_CASTS.length = 0; WB_FX.length = 0; WB_PT.length = 0; SW.sph = []; SW.fb = []; SW.me.act = SW.me.gest = SW.mate.act = SW.mate.gest = null; SW.inSeen = 0; return _ss.apply(this, arguments); }; }
+
+// ---------- the sound library (synthesised here: original and licence-free) ----------
+if (typeof AU !== 'undefined' && AU.def && typeof WBA !== 'undefined'){
+  const D = AU.def, L = s => AD.buf(s).length;
+  const crackle = (len, sd, dens) => { const b = AD.buf(len), r = AD.rng(sd); for (let i=0;i<b.length;i++) if (r() < dens) b[i] = (r()*2 - 1); return AD.hp(b, 1800, 0.7); };
+  const rev = x => { const y = new Float32Array(x.length); for (let i=0;i<x.length;i++) y[i] = x[x.length - 1 - i]; return y; };
+  // Celestial Rupture
+  D('celestial_blue_charge', () => AD.mix(L(0.55), [AS.thump(70, 34, 0.2, 0.5, 1), 0.7], [AD.atk(rev(AD.expd(AD.biq(AD.noise(0.35, 301), 'bp', AD.lin(500, 1600, 0.35), 1.2), 0.08)), 0.02), 0.4], [WBA.hum(0.5, 420, 140, 0.18, 'sine', 0.01), 0.4],
+    [WBA.crystal(0.3, 2600, 302), 0.04, 0.02], [WBA.crystal(0.25, 3100, 303), 0.03, 0.06], [AD.atk(AD.osc(0.5, 38, 'sine'), 0.1), 0.35]), {warm:true});
+  D('celestial_red_charge', () => AD.mix(L(0.55), [WBA.amv(WBA.hum(0.5, 200, 560, 0.25, 'tri', 0.01), 15, 0.55), 0.38], [WBA.rise(0.45, 311, 120, 420), 0.5], [crackle(0.45, 312, 0.004), 0.25],
+    [AD.env(AD.biq(AD.noise(0.3, 313), 'bp', AD.lin(600, 3800, 0.3), 1.4), 0.05, 0.1, 0, 0.15), 0.25, 0.12], [WBA.amv(AD.atk(AD.osc(0.5, 55, 'sine'), 0.05), 12, 0.8), 0.3]), {warm:true});
+  D('celestial_energy_orbit', () => { const a = WBA.amv(AD.osc(0.42, AD.lin(160, 210, 0.42), 'sine'), AD.lin(8, 42, 0.42), 0.55), b = WBA.amv(AD.osc(0.42, AD.lin(330, 470, 0.42), 'tri'), AD.lin(10, 50, 0.42), 0.55);
+    const sw = WBA.amv(AD.biq(AD.noise(0.42, 321), 'bp', AD.lin(900, 3800, 0.42), 2.5), AD.lin(6, 36, 0.42), 0.7), ten = AS.sines(0.42, [620, 931, 1247], 0.6, 0);
+    return AD.mix(L(0.45), [AD.atk(a, 0.02), 0.4], [AD.atk(b, 0.02), 0.26], [AD.atk(sw, 0.03), 0.3], [AD.atk(ten, 0.3), 0.1]); }, {warm:true});
+  D('celestial_merge', () => AD.mix(L(0.2), [AS.click(0.012, 2400, 331), 0.7], [AS.thump(180, 60, 0.02, 0.12, 1), 0.5]), {warm:true});
+  D('celestial_purple_form', () => AD.mix(L(1.0), [AS.thump(90, 30, 0.18, 0.8, 1), 1], [AD.expd(AD.lp(AD.noise(0.4, 341), 600, 0.7), 0.08), 0.5], [WBA.crystal(0.6, 1900, 342), 0.25], [WBA.crystal(0.5, 2850, 343), 0.15, 0.02],
+    [AD.tail(AD.atk(WBA.amv(AD.mix(L(0.9), [AD.osc(0.9, 82, 'sine'), 0.6], [AD.osc(0.9, 123, 'tri'), 0.3], [AD.osc(0.9, 164.5, 'sine'), 0.25]), 5, 0.3), 0.08), 0.4), 0.35, 0.05]), {warm:true});
+  D('celestial_purple_release', () => AD.mix(L(0.9), [AD.env(AD.biq(AD.noise(0.4, 351), 'bp', AD.sweep(300, 3200, 0.05), 0.9), 0.002, 0.07, 0, 0.12), 0.8], [AD.lp(AD.expd(AD.osc(0.8, AD.sweep(120, 46, 0.25), 'saw'), 0.25), 700, 0.9), 0.45],
+    [AS.thump(75, 36, 0.1, 0.5, 1), 0.7], [AD.env(AD.lp(AD.noise(0.8, 352), AD.lin(3000, 600, 0.8), 0.7), 0.02, 0.25, 0, 0.4), 0.3, 0.03]), {warm:true});
+  D('celestial_purple_travel_loop', () => { const n = AD.mix(L(1.2), [WBA.amv(AD.osc(1.2, 110, 'sine'), 3.3, 0.35), 0.4], [AD.osc(1.2, 165, 'sine'), 0.15], [WBA.amv(AD.biq(AD.noise(1.2, 361), 'bp', 5200, 3), 9, 0.7), 0.1], [AD.lp(AD.noise(1.2, 362), 900, 0.7), 0.3]); return AD.tail(AD.atk(n, 0.06), 0.2); }, {warm:true});
+  D('celestial_purple_impact', () => AD.mix(L(1.8), [AS.thump(95, 26, 0.12, 1.2, 1), 1.1], [WBA.slice(0.08, 371, 3200), 0.7], [AS.click(0.02, 2600, 372), 0.6], [AD.env(AD.biq(AD.noise(1.2, 373), 'bp', AD.sweep(2400, 180, 0.35), 0.8), 0.005, 0.35, 0, 0.6), 0.55],
+    [AD.expd(AD.osc(1.6, 44, 'sine'), 0.6), 0.45, 0.04], [AD.sat(AD.expd(AD.lp(AD.noise(0.5, 374), 400, 0.8), 0.12), 2), 0.35]), {peak:0.95, warm:true});
+  D('celestial_purple_decay', () => AD.mix(L(1.6), [AD.tail(AD.expd(WBA.amv(AD.osc(1.5, 58, 'sine'), 2.2, 0.4), 0.6), 0.5), 0.6], [WBA.crystal(1.2, 1500, 381), 0.18, 0.05], [AD.expd(AD.biq(AD.noise(1.4, 382), 'bp', 700, 1.2), 0.35), 0.2]), {warm:true});
+  D('celestial_max_layer', () => AD.mix(L(1.4), [AD.tail(AD.atk(AS.sines(1.3, [392, 395.5, 587, 590, 784], 0.7, 0.02), 0.06), 0.4), 0.35], [WBA.crystal(1.0, 3136, 391), 0.15, 0.1]), {warm:true});
+  // Tyrant's Fang
+  D('tyrant_hand_gesture', () => AD.mix(L(0.12), [AD.env(AD.lp(AD.noise(0.1, 401), 2200, 0.8), 0.004, 0.03, 0, 0.04), 0.6]), {warm:true});
+  const light = (sd, f, t) => (f *= 0.75,  AD.mix(L(0.16), [WBA.slice(0.06, sd, f), 1], [AS.click(0.008, t, sd + 1), 0.55, 0.018], [AD.comb(WBA.slice(0.05, sd + 2, f*0.6), 3.1, 0.55), 0.18, 0.004], [AS.click(0.006, 5200, sd + 3), 0.35, 0.05]));
+  D('tyrant_slash_light_01', () => light(411, 6400, 3400), {warm:true});
+  D('tyrant_slash_light_02', () => light(421, 7600, 4200), {warm:true});
+  D('tyrant_slash_light_03', () => light(431, 5600, 3000), {warm:true});
+  D('tyrant_slash_impact', () => AD.mix(L(0.14), [AS.click(0.01, 3000, 441), 0.8], [AS.thump(240, 120, 0.02, 0.1, 1), 0.4], [AS.sines(0.1, [2900, 4100], 0.03, 0), 0.12]), {warm:true});
+  D('tyrant_heavy_charge', () => { const n = AD.mix(L(0.55), [AD.atk(AD.lp(AD.noise(0.5, 451), 260, 0.9), 0.3), 0.7], [AD.atk(AD.osc(0.5, AD.lin(48, 70, 0.5), 'saw'), 0.3), 0.12], [AD.atk(AS.sines(0.18, [1700, 2550], 1, 0), 0.15), 0.12, 0.27]); for (let i=Math.round(0.45*AD.sr);i<n.length;i++) n[i] *= Math.max(0, 1 - (i - 0.45*AD.sr)/(0.03*AD.sr)); return n; }, {warm:true});
+  D('tyrant_heavy_release', () => AD.mix(L(0.4), [WBA.slice(0.2, 461, 5200), 1], [WBA.slice(0.16, 462, 2600), 0.5, 0.008], [AS.click(0.015, 3800, 463), 0.6]), {warm:true});
+  D('tyrant_heavy_impact', () => AD.mix(L(1.1), [AS.thump(105, 34, 0.1, 0.7, 1), 1], [AD.expd(AD.lp(AD.noise(0.4, 471), 700, 0.7), 0.08), 0.4], [AD.comb(AD.expd(AD.biq(AD.noise(0.6, 472), 'bp', 1800, 4), 0.1), 2.3, 0.82), 0.25, 0.01], [AS.sines(0.9, [1733, 2611, 3497], 0.35, 0), 0.08, 0.01]), {peak:0.92, warm:true});
+  D('tyrant_rapid_combo', () => { const parts = []; for (let i=0;i<4;i++) parts.push([WBA.slice(0.05, 481 + i, [6400, 7400, 5600, 6900][i]), 0.8 - i*0.08, i*0.065], [AS.click(0.006, 3600 + i*300, 491 + i), 0.3, i*0.065 + 0.016]); return AD.mix(L(0.45), ...parts); }, {warm:true});
+  // the finish of the biggest cut: one extremely sharp release, a bass-heavy impact, a short distorted decay (its ominous build-up is tyrant_heavy_charge)
+  D('tyrant_execution_finish', () => AD.mix(L(1.5), [WBA.slice(0.22, 501, 6800), 1.1], [AS.click(0.02, 4400, 502), 0.8], [AS.thump(80, 26, 0.16, 1.1, 1), 1.1, 0.015], [AD.sat(AD.expd(AD.lp(AD.noise(0.8, 503), 1100, 0.7), 0.2), 3), 0.4, 0.03],
+    [AD.comb(AD.expd(AD.biq(AD.noise(0.7, 504), 'bp', 1500, 4), 0.12), 2.9, 0.8), 0.22, 0.02]), {peak:0.95, warm:true});
+  // the partner's generic "shot" sound is replaced by the replayed technique sounds
+  D('w_celestialrupture', () => new Float32Array(64)); D('w_tyrantsfang', () => new Float32Array(64));
+}
+
+// the generic projectile glow and tier glow would turn the techniques into coloured bullets: they draw their own light
+{ const _g = fxBulletGlows; fxBulletGlows = function(){ const keep = bullets; bullets = bullets.filter(b => b.vis !== 'fang' && b.vis !== 'rupture'); try { return _g.apply(this, arguments); } finally { bullets = keep; } }; }
+{ const _t = projTierFx; projTierFx = function(b){ if (b && (b.vis === 'fang' || b.vis === 'rupture')) return; return _t.apply(this, arguments); }; }
 
 // =====================================================================
 // WORLD BOSSES · the fight: two original bosses, their arenas, attacks, three phases each and a domain ultimate.

@@ -104,3 +104,7 @@ After you sign in, an **ADMIN** button appears on the right edge of the screen, 
 - Coins, XP and materials you earn while testing are test-only, and are dropped at the end.
 - Duos is switched off while testing, so nothing temporary enters another player's game.
 - Test world-boss events and test bosses run only on your device. They never claim a reward or roll loot.
+
+## Sound library
+
+`sounds/` holds WAV exports of the Secret weapon sounds (celestial_*, tyrant_*). The game synthesises the same sounds in code at runtime, so these files are for reference and editing; the game does not load them.
