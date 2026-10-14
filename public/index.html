@@ -26653,6 +26653,216 @@ function ofDraw(c){
 { const _ss = startStage; startStage = function(){ OF.d = []; OF.c = []; return _ss.apply(this, arguments); }; }
 
 // =====================================================================
+// WEAPON FEEL · how every weapon fires, levels up, lands and how enemies react
+//  Firing (by weapon family, at the point the shot leaves):
+//    guns      muzzle flash, a puff of smoke, a brass casing flicked out (pistols, shotguns, rifles)
+//    heavy     a big flash and a recoil ring (rockets, cannons, rails)
+//    bows      the string snaps back (a bright arc behind the bolt)
+//    magic     a rune circle in the spell's colour flares at the hand (ice, fire, lightning, crystal, spirit, star...)
+//  Levels (every projectile weapon, from its slot level):
+//    Lv2 a coloured trail · Lv3 sparks shed along the path · Lv4 a glowing halo · Lv5 (MAX) an orbiting ring
+//  Impacts (by element): embers, frost shards, electric arcs, acid splats, crystal shards, sparks and dust.
+//  Enemy reactions: frost builds up on slowed/frozen enemies, burning ones carry flames, poisoned ones bubble,
+//    shocked ones twitch with arcs; heavy hits stagger (briefly slowed) with stagger resistance so rapid fire
+//    can never lock an enemy down. Bosses and mini-bosses never stagger; elites only shortly.
+// Visual and feel only: damage, rates and ranges are untouched (stagger only slows movement for ~0.2 s).
+// =====================================================================
+const WFX = {fx:[], cur:null, last:{}};
+const WFAM = {pew:'gun', pew2:'gun', boom:'gun', rail:'heavy', rocket:'heavy', grav:'heavy', hole:'heavy', twang:'bow', ice:'magic', fire:'magic', zap:'magic', crystal:'magic', ghost:'magic', star:'magic', plasma:'magic', bubble:'magic', squirt:'magic', laser:'magic', saw:'gun'};
+const WEL = {ice:'#BFF0FF', fire:'#FF8A1E', zap:'#9BE8FF', crystal:'#E0B8FF', ghost:'#C9A2FF', star:'#FFE07A', plasma:'#FF4FD8', bubble:'#7FD3FF', squirt:'#9BE36B', laser:'#FF5A6E'};
+const wElem = w => w.burn ? 'fire' : w.slow ? 'ice' : w.poison ? 'poison' : w.chain ? 'zap' : (w.sfx === 'crystal' ? 'crystal' : w.sfx === 'ghost' ? 'ghost' : null);
+// remember which weapon (and level) is firing, so its shots carry the level
+{ const _sp = shootPattern; shootPattern = function(fx, fy, tgt, s){ const prev = WFX.cur; WFX.cur = s && s.id ? s : null; try { return _sp.apply(this, arguments); } finally { WFX.cur = prev; } }; }
+{ const _fb = fireBullet; fireBullet = function(x, y, a, w, o={}){ const n = bullets.length, r = _fb.apply(this, arguments);
+    try { const b = bullets[bullets.length - 1]; if (b && bullets.length > n && (o.src || 'player') === 'player'){ const id = o.wid || (WFX.cur && WFX.cur.id), s = (WFX.cur && WFX.cur.id === id) ? WFX.cur : (run && run.weapons ? run.weapons.find(x => x.id === id) : null); const wd = WPN[id] || w;
+        b.wlv = s ? s.lv || 1 : 1; b.wcol = wd.col || '#FFE07A'; if (id === 'celestialrupture' || id === 'tyrantsfang') b.wlv = 0;
+        const fam = WFAM[wd.sfx], key = id || 'x', now = performance.now();
+        if (fam && SET.particles !== 'low' && now - (WFX.last[key] || 0) > (fam === 'gun' ? 70 : 110) && WFX.fx.length < 90){ WFX.last[key] = now;
+          WFX.fx.push({k:fam, x, y, a, t:0, col:WEL[wd.sfx] || wd.col || '#FFE07A', big:wd.sfx === 'boom' || fam === 'heavy'});
+          if (fam === 'gun' && wd.sfx !== 'saw' && Math.random() < 0.8){ const side = Math.cos(a) >= 0 ? -1 : 1; WFX.fx.push({k:'casing', x:P.x, y:P.y - 6*S, vx:(Math.cos(a + side*Math.PI/2)*80 - Math.cos(a)*30)*S, vy:-120*S, t:0, rot:0}); } } } } catch(err){}
+    return r; }; }
+// level visuals on the projectile itself
+{ const _dp = drawProj; drawProj = function(b, now){
+    try { const L = b.wlv || 0; if (L >= 2 && b.src === 'player' && !b.dead){ const c = ctx, col = b.wcol;
+        (b.wtr = b.wtr || []).unshift([b.x, b.y]); if (b.wtr.length > (L >= 4 ? 7 : 5)) b.wtr.pop();
+        c.save(); c.lineCap = 'round'; for (let i=1;i<b.wtr.length;i++){ const k = 1 - i/b.wtr.length; c.globalAlpha = 0.35*k; c.strokeStyle = col; c.lineWidth = (L >= 4 ? 6 : 4)*S*k; c.beginPath(); c.moveTo(b.wtr[i - 1][0], b.wtr[i - 1][1]); c.lineTo(b.wtr[i][0], b.wtr[i][1]); c.stroke(); }
+        if (L >= 4){ c.globalAlpha = 0.28; const g = c.createRadialGradient(b.x, b.y, 0, b.x, b.y, 14*S); g.addColorStop(0, col); g.addColorStop(1, 'rgba(0,0,0,0)'); c.fillStyle = g; c.beginPath(); c.arc(b.x, b.y, 14*S, 0, TAU); c.fill(); }
+        if (L >= 5){ c.globalAlpha = 0.85; c.strokeStyle = '#FFF4C8'; c.lineWidth = 1.5*S; c.beginPath(); c.arc(b.x, b.y, 10*S, now*9 + b.ph, now*9 + b.ph + 2.2); c.stroke(); c.strokeStyle = col; c.beginPath(); c.arc(b.x, b.y, 10*S, now*9 + b.ph + Math.PI, now*9 + b.ph + Math.PI + 2.2); c.stroke(); }
+        c.restore();
+        if (L >= 3 && SET.particles !== 'low' && parts.length < 380 && Math.random() < 0.25) parts.push({x:b.x, y:b.y, vx:rnd(-30, 30)*S, vy:rnd(-30, 30)*S, life:0.25, max:0.25, r:rnd(1.5, 2.5)*S, col, f:1}); } } catch(err){}
+    return _dp.apply(this, arguments); }; }
+// impacts by element, and the reactions they leave on enemies
+{ const _dd = dealDamage; dealDamage = function(e, dmg, o={}){ const alive = e && !e.dead, hp0 = e ? e.hp : 0, r = _dd.apply(this, arguments);
+    try { if (alive && o && o.wid && o.src === 'player' && WPN[o.wid] && o.wid !== 'tyrantsfang' && o.wid !== 'celestialrupture'){ const w = WPN[o.wid], el = wElem(w), dealt = hp0 - e.hp;
+        if (el === 'zap') e.wzT = 0.35;
+        const now = run.t; if (!e.wfxT || now - e.wfxT > 0.15){ e.wfxT = now; if (WFX.fx.length < 120 && SET.particles !== 'low') WFX.fx.push({k:'hit', el:el || (WFAM[w.sfx] === 'heavy' ? 'heavy' : 'phys'), x:e.x + rnd(-0.3, 0.3)*e.r, y:e.y + rnd(-0.3, 0.3)*e.r, t:0, col:w.col}); }
+        // stagger: a heavy hit (a big share of its health, or a heavy weapon) slows it for a moment; resistance stops lock-downs
+        if (!e.attacks && !e.mir && e.role !== 'mini' && !e.dead && (dealt > e.max*0.22 || WFAM[w.sfx] === 'heavy') && !(e.stagCd > now)){ e.stagT = e.elite ? 0.12 : 0.22; e.stagCd = now + 1.2; e.stx = e.x; e.sty = e.y; } } } catch(err){}
+    return r; }; }
+{ const _cl = chainLightning; chainLightning = function(from){ try { if (from) from.wzT = 0.35; } catch(e){} return _cl.apply(this, arguments); }; }
+{ const _up = update; update = function(dt){
+    // staggered enemies only cover a fifth of their normal movement
+    const st0 = []; try { if (run && state === 'play') for (const e of enemies) if (e.stagT > 0 && !e.dead) st0.push([e, e.x, e.y]); } catch(err){}
+    const r = _up.apply(this, arguments);
+    try { for (const [e, x, y] of st0){ e.x = x + (e.x - x)*0.2; e.y = y + (e.y - y)*0.2; e.stagT -= dt; }
+      for (const e of enemies) if (e.wzT > 0) e.wzT -= dt;
+      for (const f of WFX.fx){ f.t += dt; if (f.k === 'casing'){ f.x += f.vx*dt; f.y += f.vy*dt; f.vy += 500*S*dt; f.vx *= 0.97; f.rot += 18*dt; } }
+      WFX.fx = WFX.fx.filter(f => f.t < (f.k === 'casing' ? 0.5 : f.k === 'hit' ? 0.3 : f.k === 'magic' ? 0.22 : 0.12)); } catch(err){}
+    return r; }; }
+function wfxDraw(c, now){
+  for (const f of WFX.fx){ const k = f.t/(f.k === 'casing' ? 0.5 : f.k === 'hit' ? 0.3 : f.k === 'magic' ? 0.22 : 0.12); c.save(); c.globalAlpha = Math.max(0, 1 - k);
+    if (f.k === 'gun' || f.k === 'heavy'){ const s = (f.big ? 18 : 11)*S; c.translate(f.x, f.y); c.rotate(f.a); c.fillStyle = '#FFF4C8'; c.beginPath(); c.moveTo(0, -s*0.35); c.lineTo(s*1.4, 0); c.lineTo(0, s*0.35); c.closePath(); c.fill();
+      c.fillStyle = '#FFB03D'; c.beginPath(); c.moveTo(0, -s*0.2); c.lineTo(s*0.9, -s*0.5); c.lineTo(s*0.5, 0); c.lineTo(s*0.9, s*0.5); c.lineTo(0, s*0.2); c.closePath(); c.fill();
+      if (f.k === 'heavy'){ c.globalAlpha *= 0.6; c.strokeStyle = '#FFE07A'; c.lineWidth = 2*S; c.beginPath(); c.arc(0, 0, s*(0.6 + k*1.4), 0, TAU); c.stroke(); }
+      c.globalAlpha *= 0.35; c.fillStyle = '#D8D2E8'; c.beginPath(); c.arc(s*0.8 + k*10*S, -k*6*S, s*0.35*(1 + k), 0, TAU); c.fill(); }
+    else if (f.k === 'bow'){ c.translate(f.x, f.y); c.rotate(f.a); c.strokeStyle = '#FFF4C8'; c.lineWidth = 1.6*S; c.beginPath(); c.arc(-6*S, 0, 12*S, -1.1, 1.1); c.stroke(); }
+    else if (f.k === 'magic'){ const s = (9 + 10*k)*S; c.strokeStyle = f.col; c.lineWidth = 2*S; c.beginPath(); c.arc(f.x, f.y, s, 0, TAU); c.stroke(); c.lineWidth = 1.2*S; for (let i=0;i<6;i++){ const a = i*Math.PI/3 + now*4; c.beginPath(); c.moveTo(f.x + Math.cos(a)*s*0.6, f.y + Math.sin(a)*s*0.6); c.lineTo(f.x + Math.cos(a)*s*1.15, f.y + Math.sin(a)*s*1.15); c.stroke(); } }
+    else if (f.k === 'casing'){ c.translate(f.x, f.y); c.rotate(f.rot); c.fillStyle = '#E8B84A'; c.strokeStyle = '#6A4A10'; c.lineWidth = 1; c.fillRect(-3*S, -1.5*S, 6*S, 3*S); c.strokeRect(-3*S, -1.5*S, 6*S, 3*S); }
+    else if (f.k === 'hit'){ const s = (6 + 14*k)*S;
+      if (f.el === 'fire'){ c.fillStyle = '#FFB03D'; for (let i=0;i<5;i++){ const a = i*1.26 + f.x; c.beginPath(); c.arc(f.x + Math.cos(a)*s, f.y + Math.sin(a)*s - k*10*S, 2.2*S*(1 - k), 0, TAU); c.fill(); } }
+      else if (f.el === 'ice'){ c.fillStyle = '#E6FBFF'; c.strokeStyle = '#6FA8D8'; c.lineWidth = 1; for (let i=0;i<4;i++){ const a = i*Math.PI/2 + 0.4; c.save(); c.translate(f.x + Math.cos(a)*s*0.8, f.y + Math.sin(a)*s*0.8); c.rotate(a); c.beginPath(); c.moveTo(0, -3*S); c.lineTo(5*S, 0); c.lineTo(0, 3*S); c.closePath(); c.fill(); c.stroke(); c.restore(); } }
+      else if (f.el === 'zap'){ c.strokeStyle = '#BFF6FF'; c.lineWidth = 1.6*S; for (let i=0;i<3;i++){ const a = i*2.1 + f.t*30; c.beginPath(); c.moveTo(f.x, f.y); c.lineTo(f.x + Math.cos(a)*s*0.5 + 3*S, f.y + Math.sin(a)*s*0.5 - 3*S); c.lineTo(f.x + Math.cos(a)*s, f.y + Math.sin(a)*s); c.stroke(); } }
+      else if (f.el === 'poison'){ c.fillStyle = '#9BE36B'; for (let i=0;i<5;i++){ const a = i*1.25; c.beginPath(); c.arc(f.x + Math.cos(a)*s*0.8, f.y + Math.sin(a)*s*0.6 + k*6*S, 2.4*S, 0, TAU); c.fill(); } }
+      else if (f.el === 'crystal' || f.el === 'ghost'){ c.strokeStyle = f.el === 'crystal' ? '#E0B8FF' : '#C9A2FF'; c.lineWidth = 2*S; c.beginPath(); for (let i=0;i<6;i++){ const a = i*Math.PI/3; c.moveTo(f.x + Math.cos(a)*s*0.4, f.y + Math.sin(a)*s*0.4); c.lineTo(f.x + Math.cos(a)*s, f.y + Math.sin(a)*s); } c.stroke(); }
+      else if (f.el === 'heavy'){ c.strokeStyle = '#FFE07A'; c.lineWidth = 3*S*(1 - k); c.beginPath(); c.arc(f.x, f.y, s*1.3, 0, TAU); c.stroke(); c.fillStyle = 'rgba(200,180,150,.5)'; c.beginPath(); c.arc(f.x, f.y + 4*S, s*0.7, 0, TAU); c.fill(); }
+      else { c.strokeStyle = '#FFF4C8'; c.lineWidth = 1.6*S; for (let i=0;i<4;i++){ const a = i*Math.PI/2 + 0.78; c.beginPath(); c.moveTo(f.x + Math.cos(a)*s*0.3, f.y + Math.sin(a)*s*0.3); c.lineTo(f.x + Math.cos(a)*s*0.8, f.y + Math.sin(a)*s*0.8); c.stroke(); } } }
+    c.restore(); }
+  // what enemies carry: frost, flames, bubbles, arcs, a stagger shake
+  for (const e of enemies){ if (e.dead || e.attacks) continue; const R = e.r;
+    if (e.frozen > 0 || e.slowT > 0){ c.save(); c.globalAlpha = e.frozen > 0 ? 0.55 : 0.3; c.fillStyle = '#CFF4FF'; c.strokeStyle = '#7FC4E8'; c.lineWidth = 1.2;
+      for (let i=0;i<(e.frozen > 0 ? 5 : 3);i++){ const a = i*1.3 + e.wob, x = e.x + Math.cos(a)*R*0.7, y = e.y + Math.sin(a)*R*0.6; c.beginPath(); c.moveTo(x, y - 4*S); c.lineTo(x + 3*S, y); c.lineTo(x, y + 4*S); c.lineTo(x - 3*S, y); c.closePath(); c.fill(); c.stroke(); } c.restore(); }
+    if (e.burnT > 0 && SET.particles !== 'low'){ c.save(); for (let i=0;i<2;i++){ const a = e.wob + i*2.4, x = e.x + Math.cos(a)*R*0.5, y = e.y - R*0.4, h = (5 + 3*Math.sin(now*14 + i))*S; c.fillStyle = '#FF8A1E'; c.globalAlpha = 0.8; c.beginPath(); c.moveTo(x - 3*S, y); c.quadraticCurveTo(x, y - h*2, x + 3*S, y); c.fill(); c.fillStyle = '#FFE07A'; c.beginPath(); c.moveTo(x - 1.5*S, y); c.quadraticCurveTo(x, y - h, x + 1.5*S, y); c.fill(); } c.restore(); }
+    if (e.poisonT > 0 && SET.particles !== 'low'){ c.save(); c.fillStyle = '#9BE36B'; c.globalAlpha = 0.7; const q = (now*1.4 + e.wob) % 1; c.beginPath(); c.arc(e.x + Math.sin(e.wob*3)*R*0.4, e.y - R*0.3 - q*R*0.8, 2.6*S*(1 - q*0.5), 0, TAU); c.fill(); c.restore(); }
+    if (e.wzT > 0){ c.save(); c.strokeStyle = '#BFF6FF'; c.lineWidth = 1.4*S; c.globalAlpha = 0.9; for (let i=0;i<2;i++){ const a = Math.random()*TAU; c.beginPath(); c.moveTo(e.x + Math.cos(a)*R*0.3, e.y + Math.sin(a)*R*0.3); c.lineTo(e.x + Math.cos(a + 0.4)*R*0.8, e.y + Math.sin(a + 0.4)*R*0.8); c.lineTo(e.x + Math.cos(a)*R*1.2, e.y + Math.sin(a)*R*1.2); c.stroke(); } c.restore(); }
+  }
+}
+{ const _dr = draw; draw = function(now){ const r = _dr.apply(this, arguments); try { if (run && state !== 'menu') wfxDraw(ctx, now); } catch(err){ console.error(err); } return r; }; }
+// staggered enemies visibly shudder
+{ const _dm = drawMob; drawMob = function(c, e){ if (e && e.stagT > 0 && !e.dead){ const j = 2*S*Math.sin(performance.now()*0.09); c.save(); c.translate(j, 0); try { return _dm.apply(this, arguments); } finally { c.restore(); } } return _dm.apply(this, arguments); }; }
+{ const _ss = startStage; startStage = function(){ WFX.fx = []; WFX.last = {}; return _ss.apply(this, arguments); }; }
+
+// =====================================================================
+// DUNGEON VARIETY · mini-boss fighting styles and optional stage objectives
+//  Mini-bosses (stages 5 and 8) now each fight in one of six styles, with their own title, look and attacks:
+//    Assassin   fast; blinks and lunges along a telegraphed line
+//    Brute      armoured and slow; stomps and a big wind-up slam
+//    Broodmother summons waves and an elite guard
+//    Caster     keeps its distance and casts the element of its world
+//    Artillery  missiles and barrages of telegraphed strikes
+//    Warden     controls the ground with roots / sand rings and toxic pools
+//  At half health a mini-boss ENRAGES: a short flash and banner, faster attacks and one extra move.
+//  Objectives (about 1 stage in 3, never on boss stages, never in a new player's first stage) run inside the
+//  normal timed stage and pay a bonus: Destroy the Totems, Protect the Crystal, Eliminate the Elite,
+//  Corruption Cleanse, Treasure Trial (no damage for 30 s). Failing one costs nothing.
+// =====================================================================
+const MB_STYLES = {
+  assassin:{title:'Assassin', col:'#C9A2FF', atk:['blink', 'shadowLunge', 'shadowLunge'], spd:1.55, hp:0.85, add:'blink'},
+  brute:{title:'Brute', col:'#AEB6C2', atk:['stomp', 'groundSlam'], spd:0.75, hp:1.35, add:'stomp'},
+  brood:{title:'Broodmother', col:'#7BD94F', atk:['summon', 'ring', 'summonElite'], spd:0.9, hp:1, add:'summon'},
+  caster:{title:'Caster', col:'#38D6F5', atk:null, spd:0.9, hp:0.95, add:'ring', beh:'shoot'},
+  artillery:{title:'Artillery', col:'#FF8A1E', atk:['missiles', 'shellBarrage'], spd:0.7, hp:1.1, add:'shellBarrage'},
+  warden:{title:'Warden', col:'#9BE34B', atk:null, spd:0.85, hp:1.05, add:'toxicPools'},
+};
+const MB_CAST = ['seedRing', 'sandRing', 'shards', 'fireballs', 'lasers'], MB_WARD = ['roots', 'sandRing', 'shards', 'roots', 'spiral'];
+Object.assign(XB_ATK, {
+  shadowLunge(e){ const ds = dmgScale(), a = Math.atan2(P.y - e.y, P.x - e.x), L = 330*S, x2 = clamp(e.x + Math.cos(a)*L, 30, W - 30), y2 = clamp(e.y + Math.sin(a)*L, 40, H - 30);
+    zones.push({kind:'beam', x1:e.x, y1:e.y, x2, y2, w:e.r*1.6, warn:0.75, life:0.2, dmg:24*ds, col:'#C9A2FF'});
+    e.queue.push({t:0.75, fn:() => { if (e.dead) return; burst(e.x, e.y, '#C9A2FF', 12, 1); e.x = x2; e.y = y2; burst(e.x, e.y, '#C9A2FF', 16, 1.1); shake = Math.max(shake, reduce ? 0 : 4); }}); },
+  groundSlam(e){ const ds = dmgScale(); e.mbWind = 1.0; zones.push({kind:'burst', x:e.x, y:e.y, r:150*S, warn:1.0, dmg:28*ds, col:'#AEB6C2'});
+    e.queue.push({t:1.0, fn:() => { if (e.dead) return; shake = Math.max(shake, reduce ? 0 : 9); for (let i=0;i<14;i++){ const a = i/14*TAU; eprojs.push({x:e.x, y:e.y, vx:Math.cos(a)*190*S, vy:Math.sin(a)*190*S, r:8*S, dmg:12*ds, col:'#8C94A4', life:2.2}); } }}); },
+  shellBarrage(e){ const ds = dmgScale(); for (let i=0;i<7;i++){ const p = {x:clamp(P.x + rnd(-170, 170)*S, 30, W - 30), y:clamp(P.y + rnd(-140, 140)*S, 40, H - 30)}; zones.push({kind:'burst', x:i ? p.x : P.x, y:i ? p.y : P.y, r:46*S, warn:1.1 + i*0.1, dmg:15*ds, col:'#FF8A1E', missile:true}); } },
+  toxicPools(e){ const ds = dmgScale(); for (let i=0;i<2;i++) zones.push({kind:'pool', x:clamp(P.x + (i ? rnd(-120, 120)*S : 0), 30, W - 30), y:clamp(P.y + (i ? rnd(-100, 100)*S : 0), 40, H - 30), r:72*S, warn:1.0, life:5, dps:9*ds, slow:0.3, col:'rgba(140,220,70,.55)'}); },
+});
+{ const _sm = spawnMob; spawnMob = function(role, o={}){ const e = _sm.apply(this, arguments);
+    try { if (role === 'mini' && e && run && !run.wbFight && !(typeof duoGuest === 'function' && duoGuest())){ const keys = Object.keys(MB_STYLES), k = o.mbStyle || keys[(run.w*3 + run.stage + (save.mbSeed = ((save.mbSeed || 0) + 1))) % keys.length], M = MB_STYLES[k];
+        e.mbStyle = k; e.name = W0().en.tank.name + ' ' + M.title; e.spd *= M.spd; e.hp *= M.hp; e.max = e.hp;
+        e.attacks = (M.atk || (k === 'caster' ? [MB_CAST[run.w % 5], 'ring', MB_CAST[(run.w + 2) % 5]] : [MB_WARD[run.w % 5], 'toxicPools'])).slice(); if (M.beh) e.beh = M.beh; e.atkIdx = 0; e.mbCol = M.col; } } catch(err){ console.error(err); }
+    return e; }; }
+// enrage at half health
+{ const _up = update; update = function(dt){ const r = _up.apply(this, arguments);
+    try { if (run && state === 'play') for (const e of enemies){ if (e.dead || e.role !== 'mini' || !e.mbStyle) continue; if (e.mbWind > 0) e.mbWind -= dt;
+        if (!e.mbEnraged && e.hp < e.max*0.5){ e.mbEnraged = true; const M = MB_STYLES[e.mbStyle]; e.attacks.push(M.add); e.spd *= 1.15; e.atkT = Math.min(e.atkT, 0.8); e.mbFlash = 0.6;
+          banner('ENRAGED!', e.name + ' attacks faster', M.col); ring(e.x, e.y, e.r*3, M.col, 0.6); burst(e.x, e.y, M.col, 30, 1.3); shake = Math.max(shake, reduce ? 0 : 6); try { AU.play('ov_rally', {x:e.x, y:e.y, vol:0.45, cd:500}); } catch(err){} }
+        // enraged: every attack cooldown is a quarter shorter
+        if (e.mbEnraged && e.atkT > (e._la || 0) + 0.5) e.atkT *= 0.75; e._la = e.atkT;
+        if (e.mbFlash > 0) e.mbFlash -= dt; } } catch(err){ console.error(err); }
+    return r; }; }
+{ const _dm = drawMob; drawMob = function(c, e, now){ const r = _dm.apply(this, arguments);
+    try { if (e && e.mbStyle && !e.dead){ const M = MB_STYLES[e.mbStyle], R = e.r; c.save();
+        c.globalAlpha = 0.5 + 0.2*Math.sin(now*3); c.strokeStyle = M.col; c.lineWidth = 3*S; c.setLineDash([10*S, 6*S]); c.beginPath(); c.ellipse(e.x, e.y + R*0.85, R*1.2, R*0.42, 0, 0, TAU); c.stroke(); c.setLineDash([]); c.globalAlpha = 1;
+        const y = e.y - R*1.35, x = e.x + R*0.85; c.fillStyle = '#14112E'; c.strokeStyle = M.col; c.lineWidth = 2*S; c.beginPath(); c.arc(x, y, 9*S, 0, TAU); c.fill(); c.stroke(); c.fillStyle = M.col; c.font = `900 ${10*S}px Rubik, system-ui, sans-serif`; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText({assassin:'✦', brute:'⛨', brood:'❖', caster:'✸', artillery:'✹', warden:'❀'}[e.mbStyle], x, y + 0.5*S);
+        if (e.mbEnraged){ c.globalAlpha = 0.35 + 0.25*Math.sin(now*12); c.strokeStyle = '#FF3B55'; c.lineWidth = 3*S; c.beginPath(); c.arc(e.x, e.y, R*1.25, 0, TAU); c.stroke(); }
+        if (e.mbWind > 0){ c.globalAlpha = 0.6; c.fillStyle = '#FFFFFF'; c.beginPath(); c.arc(e.x, e.y - R*0.2, R*0.5*(1 - e.mbWind), 0, TAU); c.fill(); }
+        c.restore(); } } catch(err){}
+    return r; }; }
+
+// ---------- optional stage objectives ----------
+const OBJ_DEF = {
+  totems:{name:'Destroy the Totems', desc:'Three totems empower nearby enemies. Destroy them all.', col:'#FFC83D'},
+  crystal:{name:'Protect the Crystal', desc:'Keep the crystal alive for 60 seconds. Enemies will go for it.', col:'#38D6F5'},
+  elite:{name:'Eliminate the Elite', desc:'A marked elite has entered. Defeat it within 60 seconds.', col:'#FF3B55'},
+  cleanse:{name:'Corruption Cleanse', desc:'Corruption nodes feed the corruption meter. Destroy all three.', col:'#B05CFF'},
+  trial:{name:'Treasure Trial', desc:'Take no damage for 30 seconds to earn a treasure bonus.', col:'#FFE07A'},
+};
+const OBJ = {cur:null};
+function objEligible(){ if (!run || run.endless || run.wbFight || run.arena || run.training || run.room) return false; if (run.w === 0 && run.stage <= 1) return false; if ([5, 8, 10].includes(run.stage)) return false;
+  if (typeof tutActive === 'function' && tutActive()) return false; if (typeof duoGuest === 'function' && duoGuest()) return false; return true; }
+{ const _ss = startStage; startStage = function(){ OBJ.cur = null; const r = _ss.apply(this, arguments);
+    try { if (objEligible() && Math.random() < (save.objForce ? 1 : 0.34)){ const ks = Object.keys(OBJ_DEF), k = save.objForce || ks[Math.floor(Math.random()*ks.length)]; OBJ.cur = {k, t:0, start:rnd(25, 45), on:false, done:false, fail:false}; } } catch(err){ console.error(err); }
+    return r; }; }
+function objSpawnStatic(kind, x, y, hp, o){ const e = spawnMob('tank', {x, y, ovNo:true}); Object.assign(e, {name:o.name, col:o.col, spd:0, dmg:0, objKind:kind, born:0, hp, max:hp, beh:'none', harmless:true}, o.extra || {}); return e; }
+function objStart(){
+  const O = OBJ.cur, D = OBJ_DEF[O.k]; O.on = true; banner(D.name.toUpperCase(), D.desc, D.col); try { AU.play('wb_event', {vol:0.35, cd:500}); } catch(e){}
+  const hpS = 60*hpScale();
+  if (O.k === 'totems' || O.k === 'cleanse'){ O.list = []; const pts = [[0.2, 0.25], [0.8, 0.3], [0.5, 0.82]]; for (const [fx, fy] of pts) O.list.push(objSpawnStatic(O.k, W*fx, H*fy, hpS*(O.k === 'totems' ? 9 : 7), {name:O.k === 'totems' ? 'War Totem' : 'Corruption Node', col:O.k === 'totems' ? '#8A5A32' : '#3A1A5A'})); }
+  if (O.k === 'crystal'){ O.cry = {x:W/2, y:H*0.55, hp:100, max:100}; O.left = 60; }
+  if (O.k === 'elite'){ const kinds = ['shield', 'commander', 'exploder']; O.target = spawnMob('tank', {elite:true, ovK:kinds[Math.floor(Math.random()*kinds.length)]}); O.target.hp *= 1.6; O.target.max = O.target.hp; O.target.objMark = true; O.left = 60; }
+  if (O.k === 'trial'){ O.left = 30; O.hit = false; }
+}
+function objEnd(ok){ const O = OBJ.cur; if (!O || O.done) return; O.done = true; O.ok = ok;
+  if (ok){ const coins = 40 + 25*run.w + 4*run.stage; gainCoins(coins, true); addMat('scrap', 2 + run.w); if (Math.random() < 0.35) addMat('essence', 1); banner('OBJECTIVE COMPLETE', `${OBJ_DEF[O.k].name} · +${coins} coins, Scrap`, '#5BD66B'); burst(P.x, P.y, '#FFE07A', 26, 1.2); try { AU.play('fx_lvl', {vol:0.5, cd:300}); } catch(e){} }
+  else banner('OBJECTIVE FAILED', OBJ_DEF[O.k].name + ' · no penalty', '#FF8A9A');
+  if (O.list) for (const e of O.list) if (!e.dead){ e.dead = true; }
+}
+{ const _hu = hurt; hurt = function(raw){ const O = OBJ.cur, hp0 = P ? P.hp : 0; const r = _hu.apply(this, arguments); try { if (O && O.on && !O.done && O.k === 'trial' && P && P.hp < hp0) { O.hit = true; objEnd(false); } } catch(e){} return r; }; }
+{ const _up = update; update = function(dt){ const r = _up.apply(this, arguments);
+    try { const O = OBJ.cur; if (!O || !run || state !== 'play' || O.done) return r; O.t += dt; if (!O.on){ if (O.t >= O.start && !enemies.some(e => !e.dead && (e.attacks))) objStart(); return r; }
+      if (O.k === 'totems'){ const alive = O.list.filter(e => !e.dead); for (const e of enemies){ if (e.dead || e.objKind) continue; const near = alive.some(t => Math.hypot(t.x - e.x, t.y - e.y) < 230*S); if (e._bsT == null) e._bsT = e.spd; e.spd = e._bsT*(near ? 1.2 : 1); e.objBuff = near; } if (!alive.length) objEnd(true); }
+      if (O.k === 'cleanse'){ const alive = O.list.filter(e => !e.dead); if (typeof run.corr === 'number') run.corr += alive.length*0.04*dt; if (!alive.length){ if (typeof run.corr === 'number') run.corr = Math.max(0, run.corr - 8); objEnd(true); } }
+      if (O.k === 'crystal'){ const C0 = O.cry; O.left -= dt; for (const e of enemies){ if (e.dead || e.attacks) continue; const d = Math.hypot(e.x - C0.x, e.y - C0.y); if (d < e.r + 26*S){ C0.hp -= (e.elite ? 7 : 3)*dt; e.x += (e.x - C0.x)/(d || 1)*2; } }
+        if (C0.hp <= 0) objEnd(false); else if (O.left <= 0) objEnd(true); }
+      if (O.k === 'elite'){ O.left -= dt; if (O.target.dead) objEnd(true); else if (O.left <= 0){ objEnd(false); } }
+      if (O.k === 'trial'){ O.left -= dt; if (O.left <= 0) objEnd(true); }
+    } catch(err){ console.error(err); }
+    return r; }; }
+// some enemies head for the crystal while it is up
+{ const _et = enemyTarget; enemyTarget = function(e){ const O = OBJ.cur; if (O && O.on && !O.done && O.k === 'crystal' && e && !e.attacks && !e.objKind && (e.wob % 1) < 0.45) return {x:O.cry.x, y:O.cry.y}; return _et.apply(this, arguments); }; }
+// totems, nodes, the crystal and the marked elite read clearly; the objective tracker sits under the stage label
+{ const _dm = drawMob; drawMob = function(c, e, now){ if (e && e.objKind && !e.dead){ objDrawStatic(c, e, now); return; } const r = _dm.apply(this, arguments);
+    try { if (e && e.objMark && !e.dead){ c.save(); c.strokeStyle = '#FF3B55'; c.lineWidth = 2.5*S; const y = e.y - e.r*1.9 - Math.abs(Math.sin(now*4))*4*S; c.beginPath(); c.moveTo(e.x - 8*S, y - 10*S); c.lineTo(e.x, y); c.lineTo(e.x + 8*S, y - 10*S); c.stroke(); c.restore(); }
+      if (e && e.objBuff && !e.dead){ c.save(); c.globalAlpha = 0.6; c.fillStyle = '#FFC83D'; c.beginPath(); c.arc(e.x, e.y - e.r*1.2, 2.5*S, 0, TAU); c.fill(); c.restore(); } } catch(err){}
+    return r; }; }
+function objDrawStatic(c, e, now){ const R = 26*S, tot = e.objKind === 'totems'; c.save();
+  c.fillStyle = 'rgba(0,0,0,.28)'; c.beginPath(); c.ellipse(e.x, e.y + R*0.9, R*0.9, R*0.3, 0, 0, TAU); c.fill();
+  if (tot){ c.fillStyle = '#8A5A32'; c.strokeStyle = C.line; c.lineWidth = 3; rrect(c, e.x - R*0.45, e.y - R*1.3, R*0.9, R*2.1, 6*S); c.fill(); c.stroke(); c.fillStyle = '#FFC83D'; for (let i=0;i<3;i++){ c.beginPath(); c.arc(e.x, e.y - R*0.9 + i*R*0.6, 4*S, 0, TAU); c.fill(); }
+    c.globalAlpha = 0.18 + 0.1*Math.sin(now*3); c.strokeStyle = '#FFC83D'; c.lineWidth = 2*S; c.beginPath(); c.arc(e.x, e.y, 230*S, 0, TAU); c.stroke(); }
+  else { const p = 1 + 0.08*Math.sin(now*5); c.fillStyle = '#3A1A5A'; c.strokeStyle = C.line; c.lineWidth = 3; c.beginPath(); c.moveTo(e.x, e.y - R*1.4*p); c.lineTo(e.x + R*0.7, e.y); c.lineTo(e.x, e.y + R*0.6); c.lineTo(e.x - R*0.7, e.y); c.closePath(); c.fill(); c.stroke(); c.fillStyle = '#B05CFF'; c.beginPath(); c.arc(e.x, e.y - R*0.3, 6*S*p, 0, TAU); c.fill(); }
+  c.globalAlpha = 1; const w = R*2; c.fillStyle = C.line; c.fillRect(e.x - w/2 - 1, e.y - R*1.7 - 1, w + 2, 6*S + 2); c.fillStyle = tot ? '#FFC83D' : '#B05CFF'; c.fillRect(e.x - w/2, e.y - R*1.7, w*Math.max(0, e.hp/e.max), 6*S);
+  c.restore(); }
+{ const _dr = draw; draw = function(now){ const r = _dr.apply(this, arguments);
+    try { const O = OBJ.cur; if (O && O.on && O.k === 'crystal' && !O.done && run){ const C0 = O.cry, c = ctx, R = 22*S, p = 1 + 0.05*Math.sin(now*4); c.save();
+        c.fillStyle = 'rgba(56,214,245,.18)'; c.beginPath(); c.arc(C0.x, C0.y, R*2.2, 0, TAU); c.fill(); c.fillStyle = '#7FE3FF'; c.strokeStyle = C.line; c.lineWidth = 3; c.beginPath(); c.moveTo(C0.x, C0.y - R*1.6*p); c.lineTo(C0.x + R*0.8, C0.y); c.lineTo(C0.x, C0.y + R*0.9); c.lineTo(C0.x - R*0.8, C0.y); c.closePath(); c.fill(); c.stroke();
+        const w = R*3; c.fillStyle = C.line; c.fillRect(C0.x - w/2 - 1, C0.y - R*2.2 - 1, w + 2, 7*S + 2); c.fillStyle = C0.hp > 35 ? '#38D6F5' : '#FF5A6E'; c.fillRect(C0.x - w/2, C0.y - R*2.2, w*Math.max(0, C0.hp/C0.max), 7*S); c.restore(); }
+      objHud(); } catch(err){ console.error(err); }
+    return r; }; }
+function objHud(){ let el = document.getElementById('objChip'); const O = OBJ.cur, show = O && O.on && !O.done && run && ['play', 'paused', 'levelup', 'chest'].includes(state);
+  if (!show){ if (el) el.hidden = true; return; }
+  if (!el){ el = document.createElement('div'); el.id = 'objChip'; document.body.appendChild(el); const s = document.createElement('style'); s.textContent = '#objChip{position:fixed;left:50%;transform:translateX(-50%);top:calc(148px + env(safe-area-inset-top));z-index:30;font:800 12px Rubik,system-ui,sans-serif;padding:4px 12px;border-radius:10px;background:rgba(14,10,40,.88);border:1.5px solid var(--oc);color:#FFF6E6;white-space:nowrap;pointer-events:none}#objChip b{color:var(--oc);margin-right:6px}'; document.head.appendChild(s); }
+  el.hidden = false; const D = OBJ_DEF[O.k]; let p = '';
+  if (O.list) p = `${O.list.filter(e => e.dead).length}/${O.list.length}`; if (O.k === 'crystal') p = `${Math.ceil(O.left)}s · crystal ${Math.max(0, Math.round(O.cry.hp))}%`; if (O.k === 'elite' || O.k === 'trial') p = `${Math.ceil(O.left)}s`;
+  const sig = O.k + p; if (el._s === sig) return; el._s = sig; el.style.setProperty('--oc', D.col); el.innerHTML = '<b></b>'; el.querySelector('b').textContent = D.name; el.appendChild(document.createTextNode(p)); }
+
+// =====================================================================
 // FIRST-TIME TUTORIAL · "Your First Adventure"
 // A brand-new player is guided through the real game: welcome card, Arin the guide in Forgotten Forest, a glowing
 // trail along walkable ground to the real dungeon gate, the real dungeon panel (Normal, stage 1), then inside the
