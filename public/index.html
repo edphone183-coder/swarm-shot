@@ -27078,6 +27078,121 @@ function rvlFrame(cv){
 { const st = document.createElement('style'); st.textContent = `#evoFx{position:absolute; inset:0; width:100%; height:100%; pointer-events:none; z-index:0} #evoOv > :not(#evoFx){position:relative; z-index:1}`; document.head.appendChild(st); }
 
 // =====================================================================
+// RARE DROPS + LEVEL-UP CARDS
+//  Rare drop moment: when a Legendary, Mythic or Secret item is unlocked for the first time (weapon, armour,
+//  pet, relic, accessory or Signature Power) a reveal card slides in at the top: item, rarity, where it came
+//  from and "Unlocked · added to your Locker", with its own sound per rarity. It never pauses the game,
+//  closes by itself (shorter during a fight) and a click/tap skips it. Secret items get a turning
+//  prismatic border. Shop/crate screens already have their own reveal, so they are left alone.
+//  Level-up cards: a level meter (pips), "Now → Next" for the numbers that change, and a pick animation.
+// =====================================================================
+const RD = {q:[], cur:null};
+const RD_RANK = {legendary:1, mythic:2, secret:3};
+function rdInfo(key){
+  const [t, id] = key.split(':');
+  try {
+    if (t === 'w' && WPN[id]) return {name:WPN[id].name, rar:WPN[id].rarity, icon:WPN[id].icon, kind:'Weapon', item:{weapon:id}};
+    if (t === 'a' && AR[id]) return {name:AR[id].name, rar:AR[id].rarity, icon:AR[id].icon || 'shield', kind:'Armour'};
+    if (t === 'p' && PETM[id]) return {name:PETM[id].name, rar:PETM[id].rarity, icon:PETM[id].icon || 'paw', kind:'Pet'};
+    if (t === 'r' && RELM[id]) return {name:RELM[id].name, rar:RELM[id].rarity, icon:RELM[id].icon || 'gem', kind:'Relic'};
+    if (t === 'x' && ACCM[id]) return {name:ACCM[id].name, rar:ACCM[id].rarity, icon:ACCM[id].icon || 'gem', kind:'Accessory'};
+    if (t === 's' && SIGM[id]) return {name:SIGM[id].name, rar:SIGM[id].rarity || 'legendary', icon:SIGM[id].icon || 'star', kind:'Signature Power'};
+  } catch(err){}
+  return null;
+}
+function rdSource(){
+  try { if (run){ if (run.wbFight && typeof WB_BOSS !== 'undefined' && WB_BOSS[run.wbFight.b]) return 'World Boss · ' + (WB_BOSS[run.wbFight.b].name || 'World Boss');
+      const bo = enemies.find(e => (e.role === 'boss' || e.role === 'secret') && (e.dead || e.hp <= 0)); if (bo) return 'Boss · ' + bo.name;
+      return W0().name + (run.endless ? ' · Endless' : ' · Stage ' + run.stage); }
+    if (state === 'world' || state === 'owpanel' || state === 'owdlg') return 'Open world'; } catch(err){}
+  return 'Reward';
+}
+const RD_SKIP_STATES = ['shop', 'roll', 'locker', 'codex', 'menu', 'settings', 'profile', 'quests'];
+{ const _mn = markNew; markNew = function(key){ const fresh = !save.got || !save.got[key]; const r = _mn.apply(this, arguments);
+    try { if (fresh && !RD_SKIP_STATES.includes(state)){ const inf = rdInfo(key); if (inf && RD_RANK[inf.rar]){ inf.key = key; inf.src = rdSource(); RD.q.push(inf); if (!RD.cur) setTimeout(rdNext, 250); } } } catch(err){}
+    return r; }; }
+function rdSound(rar){
+  try { if (rar === 'secret'){ beep(110, 0.9, 'sine', 0.05, 55); beep(659, 0.2, 'triangle', 0.045, null, 0.2); beep(831, 0.2, 'triangle', 0.045, null, 0.32); beep(988, 0.25, 'triangle', 0.045, null, 0.44); beep(1319, 0.9, 'sine', 0.05, 1760, 0.56); }
+    else if (rar === 'mythic'){ beep(196, 0.6, 'sawtooth', 0.03, 392); beep(784, 0.15, 'triangle', 0.05, null, 0.18); beep(988, 0.15, 'triangle', 0.05, null, 0.3); beep(1175, 0.6, 'triangle', 0.05, null, 0.42); }
+    else { beep(523, 0.12, 'triangle', 0.05); beep(784, 0.12, 'triangle', 0.05, null, 0.1); beep(1046, 0.4, 'triangle', 0.05, null, 0.2); } } catch(err){}
+}
+function rdNext(){
+  if (RD.cur) return; const inf = RD.q.shift(); if (!inf) return;
+  const d = document.createElement('div'); d.className = 'rdrop r-' + inf.rar; d.style.setProperty('--rc', (RAR[inf.rar] || RAR.legendary).col); d.setAttribute('role', 'status');
+  d.innerHTML = '<div class="rd-ic"><canvas width="96" height="96"></canvas></div><div class="rd-t"><small class="rd-r"></small><b class="rd-n"></b><span class="rd-s"></span><span class="rd-u"></span></div>';
+  d.querySelector('.rd-r').textContent = `${(RAR[inf.rar] || {}).name || inf.rar} ${inf.kind}`.toUpperCase() + ' · RARE DROP';
+  d.querySelector('.rd-n').textContent = inf.name; d.querySelector('.rd-s').textContent = 'From: ' + inf.src;
+  d.querySelector('.rd-u').textContent = inf.kind === 'Signature Power' ? '✓ Unlocked · equip it in the Locker' : '✓ Unlocked · added to your Locker';
+  const cv = d.querySelector('canvas');
+  if (inf.item){ try { drawItemIcon(cv, inf.item, inf.rar); } catch(err){} } else { cv.remove(); d.querySelector('.rd-ic').innerHTML = iconSVG(inf.icon); }
+  const host = document.querySelector('#stage') || document.body; host.appendChild(d); RD.cur = d;
+  rdSound(inf.rar);
+  try { if (run && P && state === 'play'){ ring(P.x, P.y, 120*S, (RAR[inf.rar] || {}).col || '#FFB800', 0.5); } } catch(err){}
+  const fighting = state === 'play' && enemies.some(e => !e.dead);
+  const close = () => { if (RD.cur !== d) return; d.classList.add('out'); RD.cur = null; setTimeout(() => d.remove(), 300); setTimeout(rdNext, 350); };
+  d.addEventListener('click', close); d._close = close;
+  setTimeout(close, reduce ? 2600 : fighting ? 3200 : 5200);
+}
+// ---------- level-up cards ----------
+function luNums(s){ return (String(s).match(/\d+(?:\.\d+)?%?×?/g) || []); }
+function luNext(u, lvl){
+  try {
+    if (u.weapon && u.wlv > 1){ const w = WPN[u.wid], a = u.wlv - 1, b = u.wlv, out = [];
+      if (w.dmg) out.push(`dmg ${Math.round(w.dmg*wLvDmg(a)*eqWDmg(u.wid))} → ${Math.round(w.dmg*wLvDmg(b)*eqWDmg(u.wid))}`);
+      if (w.cd) out.push(`every ${(w.cd*wLvCd(a)*eqWCd(u.wid)).toFixed(2)}s → ${(w.cd*wLvCd(b)*eqWCd(u.wid)).toFixed(2)}s`); return out.join(' · '); }
+    if (u.weapon || u.fuse || !lvl || typeof u.desc !== 'function') return '';
+    const A = luNums(u.desc(lvl)), B = luNums(u.desc(lvl + 1)), out = [];
+    if (A.length !== B.length) return ''; for (let i=0;i<A.length && out.length < 2;i++) if (A[i] !== B[i]) out.push(`${A[i]} → ${B[i]}`);
+    if (!out.length){ const m = String(u.desc(lvl + 1)).match(/^\+(\d+(?:\.\d+)?)(%?)/); if (m){ const n = +m[1], f = v => +(v.toFixed(2)); out.push(`total +${f(n*lvl)}${m[2]} → +${f(n*(lvl + 1))}${m[2]}`); } }
+    return out.join(' · ');
+  } catch(err){ return ''; }
+}
+{ const _ol = openLevelUp; openLevelUp = function(){ const r = _ol.apply(this, arguments);
+    try { const cards = [...document.querySelectorAll('#cards .ucard')]; (run.offer || []).forEach((u, i) => { const b = cards[i]; if (!b) return;
+        const lvl = u.weapon ? (u.wlv - 1) : u.fuse ? 0 : L(u.id), max = u.weapon ? 5 : (u.max || 0);
+        const nx = luNext(u, lvl); if (nx){ const s = el('span', 'u-next'); s.append(el('em', null, 'Now → Next'), ' ' + nx); const lv = b.querySelector('.u-lv'); if (lv) lv.before(s); else b.appendChild(s); }
+        if (max > 1 && !u.fuse && !(u.id || '').startsWith('_')){ const p = el('span', 'u-pips'); p.setAttribute('aria-label', `Level ${lvl + 1} of ${max}`);
+          for (let k=1;k<=max;k++){ const i2 = el('i', k <= lvl ? 'on' : k === lvl + 1 ? 'nx' : ''); p.appendChild(i2); } const lv = b.querySelector('.u-lv'); if (lv) lv.after(p); } }); } catch(err){ console.error(err); }
+    return r; }; }
+// pick feedback: the chosen card pops, the others drop away (the choice itself is applied at once)
+{ const _cc = chooseCard; chooseCard = function(u){ const ok = state === 'levelup' && performance.now() >= run.cardLock;
+    if (ok){ try { const i = (run.offer || []).indexOf(u), cards = [...document.querySelectorAll('#cards .ucard')];
+        if (cards[i] && !reduce){ const lv = $('#lvl'), ghost = el('div', 'u-ghost'); const rc = cards[i].getBoundingClientRect(), hr = (document.querySelector('#stage') || document.body).getBoundingClientRect();
+          const cl = cards[i].cloneNode(true); cl.classList.add('picked'); cl.style.cssText += `;position:absolute; left:${rc.left - hr.left}px; top:${rc.top - hr.top}px; width:${rc.width}px; height:${rc.height}px; margin:0; animation:none`;
+          ghost.appendChild(cl); (document.querySelector('#stage') || document.body).appendChild(ghost); setTimeout(() => ghost.remove(), 520); } } catch(err){} }
+    return _cc.apply(this, arguments); }; }
+{ const st = document.createElement('style'); st.textContent = `
+.rdrop{position:absolute; left:50%; top:142px; translate:-50% 0; z-index:60; display:flex; gap:14px; align-items:center; min-width:300px; max-width:min(440px, calc(100% - 32px)); padding:10px 18px 10px 10px; cursor:pointer;
+  background:linear-gradient(100deg, color-mix(in srgb, var(--rc) 34%, var(--panel)), var(--panel) 75%); border:3px solid var(--rc); border-radius:18px; box-shadow:0 5px 0 var(--line), 0 0 34px color-mix(in srgb, var(--rc) 70%, transparent);
+  animation:rdIn .5s cubic-bezier(.2,1.5,.4,1) both}
+.rdrop.out{animation:rdOut .3s ease-in forwards}
+@keyframes rdIn{from{transform:translateY(-40px) scale(.8); opacity:0}}
+@keyframes rdOut{to{transform:translateY(-30px); opacity:0}}
+.rd-ic{position:relative; width:64px; height:64px; flex:none; display:grid; place-items:center; border-radius:50%; background:radial-gradient(circle, color-mix(in srgb, var(--rc) 55%, transparent), transparent 70%)}
+.rd-ic::before{content:''; position:absolute; inset:-6px; border-radius:50%; background:repeating-conic-gradient(color-mix(in srgb, var(--rc) 55%, transparent) 0 12deg, transparent 12deg 36deg); -webkit-mask:radial-gradient(circle, transparent 45%, #000 46%, transparent 72%); mask:radial-gradient(circle, transparent 45%, #000 46%, transparent 72%); animation:spin 5s linear infinite}
+.rd-ic canvas{width:60px; height:60px; position:relative} .rd-ic svg{width:44px; height:44px; position:relative}
+.rd-t{display:flex; flex-direction:column; gap:1px; text-align:left}
+.rd-r{font-size:10px; font-weight:900; letter-spacing:.12em; color:var(--rc)}
+.rd-n{font-family:'Lilita One', system-ui, sans-serif; font-weight:400; font-size:22px; line-height:1.05; color:#FFF6E6}
+.rd-s{font-size:12px; color:var(--muted)} .rd-u{font-size:12px; font-weight:800; color:#7BE38A}
+.rdrop.r-secret{border-color:transparent; background:linear-gradient(100deg, color-mix(in srgb, var(--rc) 30%, var(--panel)), var(--panel) 75%) padding-box, conic-gradient(from var(--rda, 0deg), #FF5FA8, #FFC83D, #5BD6F5, #B05CFF, #FF5FA8) border-box; animation:rdIn .5s cubic-bezier(.2,1.5,.4,1) both, rdSpin 3s linear infinite}
+.rdrop.r-secret.out{animation:rdOut .3s ease-in forwards}
+@property --rda{syntax:'<angle>'; inherits:false; initial-value:0deg}
+@keyframes rdSpin{to{--rda:360deg}}
+.rdrop.r-mythic .rd-n{text-shadow:0 0 14px var(--rc)}
+@media (max-width:640px){ .rdrop{top:64px; min-width:0} .rd-n{font-size:18px} }
+.u-next{font-size:12px; font-weight:800; color:#7BE38A; background:rgba(91,214,107,.12); border-radius:8px; padding:3px 8px}
+.u-next em{font-style:normal; color:var(--muted); font-weight:700; margin-right:2px}
+.u-pips{display:flex; gap:4px; justify-content:center} .u-pips i{width:12px; height:6px; border-radius:3px; background:rgba(255,255,255,.14); border:1px solid var(--line)}
+.u-pips i.on{background:var(--rc)} .u-pips i.nx{background:#7BE38A; animation:pipNx .8s ease-in-out infinite alternate}
+@keyframes pipNx{to{opacity:.35}}
+@media (max-width:640px){ .ucard .u-next,.ucard .u-pips{grid-column:2} }
+.u-ghost{position:absolute; inset:0; pointer-events:none; z-index:70}
+.u-ghost .ucard.picked{animation:uPick .5s cubic-bezier(.3,1.4,.5,1) forwards!important; box-shadow:0 0 0 3px var(--line), 0 0 60px var(--rc)}
+@keyframes uPick{0%{transform:scale(1)} 35%{transform:scale(1.12); filter:brightness(1.4)} 100%{transform:scale(.6) translateY(120px); opacity:0}}
+`; document.head.appendChild(st); }
+
+// =====================================================================
 // FIRST-TIME TUTORIAL · "Your First Adventure"
 // A brand-new player is guided through the real game: welcome card, Arin the guide in Forgotten Forest, a glowing
 // trail along walkable ground to the real dungeon gate, the real dungeon panel (Normal, stage 1), then inside the
