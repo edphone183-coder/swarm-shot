@@ -12,58 +12,8 @@ const rooms = new Map();          // room name -> Map(peer -> client)
 let clients = 0, nextPeer = 1;
 const TYPES = {'.html':'text/html; charset=utf-8', '.js':'text/javascript', '.css':'text/css', '.json':'application/json', '.png':'image/png', '.svg':'image/svg+xml', '.ico':'image/x-icon'};
 
-// ---------- creator admin: a fixed allowlist kept in this server's environment, never in the game's code ----------
-// Set ADMINS on the host (Render: Environment), e.g.  ADMINS=edrian:<a long random key>   (several: comma-separated).
-// Account IDs are 2-32 chars [a-z0-9_-]; keys must be at least 16 characters. With ADMINS unset, admin is off entirely.
-// Signing in gives a signed token (HMAC, 7 days). Every admin action in the game asks /api/admin/verify first, which
-// checks the signature, the expiry and that the account is STILL on the allowlist, then logs the action.
-// Changing or removing a key in ADMINS invalidates every token issued with the old list.
-const ADMINS = new Map(String(process.env.ADMINS || '').split(',').map(x => x.trim()).filter(Boolean).map(x => { const i = x.indexOf(':'); return [x.slice(0, i).trim().toLowerCase(), x.slice(i + 1)]; })
-  .filter(([id, k]) => /^[a-z0-9_-]{2,32}$/.test(id) && k && k.length >= 16));
-const ADM_SECRET = crypto.createHash('sha256').update('swarmshot-admin\n' + [...ADMINS].map(([i, k]) => i + '=' + k).sort().join('\n')).digest();
-const admHash = s => crypto.createHash('sha256').update(String(s)).digest();
-const admSign = p => crypto.createHmac('sha256', ADM_SECRET).update(p).digest('base64url');
-const admFails = new Map();   // ip -> {n, t}: 5 wrong sign-ins per 15 minutes
-const admRate = new Map();    // ip -> {n, t}: 240 admin requests per minute
-const admLog = (ip, sub, action, detail, ok) => console.log(JSON.stringify({admin:true, t:new Date().toISOString(), ip, sub, action, detail, ok}));
-function admToken(sub){ const p = Buffer.from(JSON.stringify({sub, exp:Date.now() + 7*864e5, n:crypto.randomBytes(8).toString('hex')})).toString('base64url'); return p + '.' + admSign(p); }
-function admCheckToken(tok){
-  if (typeof tok !== 'string' || tok.length > 600) return null; const [p, sig] = tok.split('.'); if (!p || !sig) return null;
-  const want = Buffer.from(admSign(p)), got = Buffer.from(sig); if (want.length !== got.length || !crypto.timingSafeEqual(want, got)) return null;
-  let o; try { o = JSON.parse(Buffer.from(p, 'base64url').toString()); } catch(e){ return null; }
-  if (!o || typeof o.sub !== 'string' || !(o.exp > Date.now()) || !ADMINS.has(o.sub)) return null; return o.sub;
-}
-function admIp(req){ return String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim().slice(0, 64); }
-function admBody(req, cb){ let n = 0, b = ''; req.on('data', d => { n += d.length; if (n > 4096){ req.destroy(); return; } b += d; }); req.on('end', () => { let j = null; try { j = JSON.parse(b); } catch(e){} cb(j && typeof j === 'object' ? j : {}); }); }
-function admApi(req, res, p){
-  const send = (code, o) => { res.writeHead(code, {'content-type':'application/json', 'cache-control':'no-store'}); res.end(JSON.stringify(o)); };
-  const ip = admIp(req), now = Date.now();
-  const r = admRate.get(ip) || {n:0, t:now}; if (now - r.t > 60000){ r.n = 0; r.t = now; } r.n++; admRate.set(ip, r); if (r.n > 240) return send(429, {error:'rate'});
-  if (admRate.size > 5000) admRate.clear(); if (admFails.size > 5000) admFails.clear();
-  if (p === '/api/admin/status' && req.method === 'GET') return send(200, {enabled:ADMINS.size > 0});
-  if (!ADMINS.size) return send(404, {error:'disabled'});
-  if (req.method !== 'POST') return send(405, {error:'method'});
-  admBody(req, j => {
-    if (p === '/api/admin/login'){
-      const f = admFails.get(ip) || {n:0, t:now}; if (now - f.t > 15*60000){ f.n = 0; f.t = now; }
-      if (f.n >= 5){ admLog(ip, null, 'login', 'locked out', false); return send(429, {error:'too many attempts'}); }
-      const id = String(j.id || '').trim().toLowerCase(), key = ADMINS.get(id);
-      // always compare something, so a wrong account ID and a wrong key take the same time
-      const ok = crypto.timingSafeEqual(admHash(key || 'x'.repeat(16) + crypto.randomBytes(8).toString('hex')), admHash(j.key || '')) && !!key;
-      if (!ok){ f.n++; admFails.set(ip, f); admLog(ip, id.slice(0, 32), 'login', 'refused', false); return send(401, {error:'not authorised'}); }
-      admFails.delete(ip); admLog(ip, id, 'login', '', true); return send(200, {token:admToken(id), sub:id});
-    }
-    if (p === '/api/admin/verify'){
-      const sub = admCheckToken(j.token), action = String(j.action || '').slice(0, 48), detail = String(j.detail || '').slice(0, 80);
-      admLog(ip, sub, action, detail, !!sub);
-      return sub ? send(200, {ok:true, sub}) : send(401, {error:'not authorised'});
-    }
-    send(404, {error:'unknown'});
-  });
-}
 const server = http.createServer((req, res) => {
   const u = url.parse(req.url); let p = decodeURIComponent(u.pathname || '/');
-  if (p.startsWith('/api/admin/')) return admApi(req, res, p);
   if (p === '/health'){ res.writeHead(200, {'content-type':'text/plain'}); return res.end('ok ' + clients); }
   if (p === '/') p = fs.existsSync(path.join(ROOT, 'index.html')) ? '/index.html' : '/test.html';
   const f = path.join(ROOT, path.normalize(p).replace(/^(\.\.[\/\\])+/, ''));
@@ -122,4 +72,4 @@ server.on('upgrade', (req, sock) => {
   C.ping = setInterval(() => { if (Date.now() - C.pong > 60000){ sock.destroy(); return; } raw(Buffer.from([0x89, 0])); }, 25000);
   sock.on('close', bye); sock.on('error', bye); sock.on('end', bye);
 });
-server.listen(PORT, () => console.log('Swarm Shot server on port', PORT, 'serving', ROOT, '· creator admin', ADMINS.size ? 'on for ' + [...ADMINS.keys()].join(', ') : 'off (set ADMINS to enable)'));
+server.listen(PORT, () => console.log('Swarm Shot server on port', PORT, 'serving', ROOT));

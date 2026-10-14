@@ -72,39 +72,6 @@ Replace `public/index.html` with the newest `swarm-shot.html` and restart, or re
   - simulation time.
 - **World boss test schedule:** add `?wbtest=1` to the address. A portal then opens every 4 minutes and stays open for 2.5 minutes. Without it, portals open on every UTC half hour and stay open for 10 minutes. The server sends its clock to the game, so every player sees the same event.
 
-## Creator panel (for you only)
-
-A developer panel for testing everything without grinding: temporary unlocks of every item, stat and level overrides, region teleports, boss and attack triggers, and debug overlays. Everything in it is temporary and is undone by **End Test Session**.
-
-**Turning it on, on this server:**
-
-1. On Render, open the service's **Environment** settings.
-2. Add a variable named `ADMINS` with the value `yourname:a-long-random-key`.
-   - The key must be at least 16 characters. Treat it like a password.
-   - For several creators, separate them with commas: `ed:key-one-…,sam:key-two-…`.
-3. Save. Render restarts the server.
-4. In the game, press **F2**, or add `#admin` to the address on a phone. Sign in with that name and key.
-
-After you sign in, an **ADMIN** button appears on the right edge of the screen, on desktop and on mobile.
-
-**How access is checked:**
-
-- The allowlist and keys live only in the server's environment. They are not in the game's code, and nothing in browser storage counts.
-- Signing in gives you a signed token. The server checks it before every admin action, and logs each action in the Render logs (keys and tokens are never logged).
-- Removing your name from `ADMINS`, or changing your key, ends your access at your next action.
-- Five wrong sign-ins from one address lock that address out for 15 minutes.
-- With `ADMINS` unset, the panel doesn't exist on the server at all.
-
-**On claude.ai**, there's nothing to set up. The panel opens only for the artifact's owner, and claude.ai confirms that before every action.
-
-**What test mode does to your save:**
-
-- Your real save is frozen while you test. The game runs on a working copy, so grants, boosts, level overrides and test coins never reach the real save.
-- Items that drop for you during normal play are written into your real save too, so they stay yours.
-- Coins, XP and materials you earn while testing are test-only, and are dropped at the end.
-- Duos is switched off while testing, so nothing temporary enters another player's game.
-- Test world-boss events and test bosses run only on your device. They never claim a reward or roll loot.
-
 ## Sound library
 
 `sounds/` holds WAV exports of the Secret weapon sounds (celestial_*, tyrant_*). The game synthesises the same sounds in code at runtime, so these files are for reference and editing; the game does not load them.
