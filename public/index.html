@@ -27193,6 +27193,114 @@ function luNext(u, lvl){
 `; document.head.appendChild(st); }
 
 // =====================================================================
+// LOCKER ROOM · weapon details
+//  - Attack preview: a small looping illustration of how the selected weapon attacks (projectiles, orbiters,
+//    swings, area strikes, boomerangs or companions, picked from the weapon's attack type), using its colour,
+//    shot count, spread, speed and fire rate, hitting three training dummies with its Lv1 damage numbers.
+//  - Compare with your starting weapon: damage per hit, attacks per second and damage per second (Lv1, before
+//    upgrades), green when better, red when worse.
+//  - Source is shown for owned weapons too (boss source, crafting, caches).
+//  - Equip feedback: setting a new starting weapon pops its Locker slot with a burst and a sound.
+// =====================================================================
+const LKP = {st:{}};
+const LK_GROUP = k => /^(orbit|spin)$/.test(k) ? 'orbit' : /^(slash|slam|harvest|warriors)$/.test(k) ? 'melee' : /^(rain|storm|judgment|nova|hole|gravity|rift|mine|chronos|apoc|blossom)$/.test(k) ? 'area'
+  : k === 'boomerang' ? 'boom' : /^(dragon|sdragon|vdragon|serpent|hydra|phoenix|bee|ufo|shadow|crown|turret)$/.test(k) ? 'pet' : 'proj';
+function lkDps(id){ const w = WPN[id]; if (!w || !w.cd || !w.dmg) return null; return w.dmg*(w.shots || 1)/w.cd; }
+function lkPreview(c, s, id, now){
+  const w = WPN[id]; if (!w) return; const g = LK_GROUP(w.kind || 'proj'), col = w.col || '#FFC83D';
+  let P = LKP.st[id]; if (!P || P.s !== s){ P = LKP.st[id] = {s, t:now, last:now, cd:0.2, ps:[], hits:[], d:[0, 0, 0], ang:0}; }
+  const dt = Math.min(0.05, Math.max(0, now - P.last)); P.last = now; P.cd -= dt; P.ang += dt*3.2;
+  c.setTransform(1,0,0,1,0,0); c.clearRect(0,0,s*2,s);
+  const bg = c.createLinearGradient(0, 0, 0, s); bg.addColorStop(0, '#221D48'); bg.addColorStop(1, '#14112E'); c.fillStyle = bg; c.fillRect(0, 0, s*2, s);
+  c.strokeStyle = 'rgba(255,255,255,.06)'; c.lineWidth = 1; for (let x = 0; x < s*2; x += s/8){ c.beginPath(); c.moveTo(x, 0); c.lineTo(x, s); c.stroke(); }
+  const px = s*0.38, py = s*0.55, T = [[s*1.45, s*0.3], [s*1.62, s*0.56], [s*1.42, s*0.8]], R = s*0.1, cd = Math.max(0.14, w.cd || 0.6);
+  const hit = (i, dmg) => { P.nh = (P.nh || 0) + 1; P.d[i] = 0.25; P.hits.push({x:T[i][0] + (Math.random() - 0.5)*R, y:T[i][1] - R*1.4, v:Math.round(dmg), t:0}); };
+  // fire
+  if (P.cd <= 0){ P.cd = cd; const n = Math.max(1, Math.min(7, w.shots || 1)), dmg = w.dmg || 10;
+    if (g === 'proj' || g === 'pet'){ const ox = g === 'pet' ? px + Math.cos(P.ang)*s*0.16 : px + R*1.2, oy = g === 'pet' ? py - s*0.18 + Math.sin(P.ang)*s*0.05 : py;
+      for (let k=0;k<n;k++){ const ti = (k + Math.floor(now/cd)) % 3, a = Math.atan2(T[ti][1] - oy, T[ti][0] - ox) + (k - (n - 1)/2)*(w.spread || 0.1)*0.6, sp = Math.max(220, Math.min(900, w.spd || 500))*s/420;
+        P.ps.push({k:w.kind === 'rail' ? 'beam' : w.kind === 'rocket' ? 'rocket' : w.kind === 'homing' ? 'home' : 'shot', x:ox, y:oy, vx:Math.cos(a)*sp, vy:Math.sin(a)*sp, ti, t:0, dmg}); } }
+    else if (g === 'area'){ for (let k=0;k<Math.min(3, n + 1);k++){ const ti = (k + Math.floor(now/cd)) % 3; P.ps.push({k:'area', x:T[ti][0], y:T[ti][1], ti, t:0, dmg}); } }
+    else if (g === 'boom'){ const ti = Math.floor(now/cd) % 3; P.ps.push({k:'boom', x:px, y:py, ti, t:0, dmg, hit:false}); }
+    else if (g === 'melee'){ P.ps.push({k:'swing', x:px, y:py, t:0, dmg}); }
+  }
+  // orbiters hit whatever they pass (a dummy "walks in" for the preview)
+  if (g === 'orbit'){ const n = Math.max(2, Math.min(6, w.shots || 3)); c.save(); for (let k=0;k<n;k++){ const a = P.ang*1.4 + k*TAU/n, x = px + Math.cos(a)*s*0.2, y = py + Math.sin(a)*s*0.2; c.fillStyle = col; c.strokeStyle = '#16122E'; c.lineWidth = 2; c.beginPath(); c.arc(x, y, s*0.035, 0, TAU); c.fill(); c.stroke(); }
+    c.restore(); if (P.cd === cd) hit(Math.floor(now/cd) % 3, w.dmg || 10); }
+  // player
+  c.save(); c.fillStyle = 'rgba(8,6,26,.35)'; c.beginPath(); c.ellipse(px, py + R*1.1, R*1.1, R*0.35, 0, 0, TAU); c.fill();
+  c.fillStyle = '#3FC9B5'; c.strokeStyle = '#16122E'; c.lineWidth = 3; c.beginPath(); c.arc(px, py, R, 0, TAU); c.fill(); c.stroke();
+  c.fillStyle = '#16122E'; c.beginPath(); c.arc(px + R*0.35, py - R*0.15, R*0.12, 0, TAU); c.arc(px + R*0.7, py - R*0.15, R*0.12, 0, TAU); c.fill(); c.restore();
+  try { drawIcon(c, w.icon, px + R*1.2, py + R*0.3, R*1.4); } catch(err){}
+  if (g === 'pet'){ const x = px + Math.cos(P.ang)*s*0.16, y = py - s*0.18 + Math.sin(P.ang)*s*0.05; c.save(); c.fillStyle = col + '55'; c.beginPath(); c.arc(x, y, R*0.9, 0, TAU); c.fill(); c.restore(); try { drawIcon(c, w.icon, x, y, R*1.5); } catch(err){} }
+  // dummies
+  for (let i=0;i<3;i++){ const [x, y] = T[i], f = P.d[i] > 0; P.d[i] = Math.max(0, P.d[i] - dt); c.save(); c.translate(x + (f ? Math.sin(now*80)*2 : 0), y);
+    c.fillStyle = 'rgba(8,6,26,.35)'; c.beginPath(); c.ellipse(0, R*1.1, R, R*0.3, 0, 0, TAU); c.fill();
+    c.fillStyle = '#8B5A2B'; c.fillRect(-R*0.12, 0, R*0.24, R*1.1); c.fillStyle = f ? '#FFFFFF' : '#E8C98A'; c.strokeStyle = '#16122E'; c.lineWidth = 2.5; c.beginPath(); c.arc(0, -R*0.1, R*0.85, 0, TAU); c.fill(); c.stroke();
+    c.strokeStyle = '#C2443C'; c.lineWidth = 2; c.beginPath(); c.arc(0, -R*0.1, R*0.45, 0, TAU); c.stroke(); c.restore(); }
+  // projectiles / effects
+  c.save();
+  for (const p of P.ps){ p.t += dt;
+    if (p.k === 'shot' || p.k === 'rocket' || p.k === 'home'){ if (p.k === 'home'){ const [tx, ty] = T[p.ti], a = Math.atan2(ty - p.y, tx - p.x), sp = Math.hypot(p.vx, p.vy); p.vx += (Math.cos(a)*sp - p.vx)*dt*6; p.vy += (Math.sin(a)*sp - p.vy)*dt*6; }
+      p.x += p.vx*dt; p.y += p.vy*dt; const [tx, ty] = T[p.ti]; if (Math.hypot(tx - p.x, ty - p.y) < R){ p.dead = true; hit(p.ti, p.dmg); if (p.k === 'rocket') P.ps.push({k:'blast', x:p.x, y:p.y, t:0}); }
+      if (p.x > s*2 || p.t > 2) p.dead = true;
+      const a = Math.atan2(p.vy, p.vx); c.save(); c.translate(p.x, p.y); c.rotate(a); c.fillStyle = col; c.strokeStyle = '#16122E'; c.lineWidth = 1.5;
+      if (p.k === 'rocket'){ c.beginPath(); c.rect(-s*0.045, -s*0.018, s*0.09, s*0.036); c.fill(); c.stroke(); c.fillStyle = '#FFB03D'; c.beginPath(); c.arc(-s*0.04, 0, s*0.012, 0, TAU); c.fill(); }
+      else { c.globalAlpha = 0.35; c.fillRect(-s*0.09, -s*0.012, s*0.09, s*0.024); c.globalAlpha = 1; c.beginPath(); c.ellipse(0, 0, s*0.03, s*0.016, 0, 0, TAU); c.fill(); c.stroke(); }
+      c.restore(); }
+    else if (p.k === 'beam'){ if (!p.done){ p.done = true; hit(p.ti, p.dmg); } const [tx, ty] = T[p.ti]; c.globalAlpha = Math.max(0, 1 - p.t/0.25); c.strokeStyle = col; c.lineWidth = s*0.02*(1 - p.t*2); c.beginPath(); c.moveTo(p.x, p.y); c.lineTo(tx + (tx - p.x)*0.3, ty + (ty - p.y)*0.3); c.stroke(); c.globalAlpha = 1; if (p.t > 0.25) p.dead = true; }
+    else if (p.k === 'area'){ const k = p.t/0.7; if (k < 0.6){ c.globalAlpha = 0.5; c.strokeStyle = col; c.setLineDash([4, 4]); c.lineWidth = 2; c.beginPath(); c.arc(p.x, p.y, R*1.8, 0, TAU); c.stroke(); c.setLineDash([]); c.globalAlpha = 1; }
+      else { if (!p.done){ p.done = true; hit(p.ti, p.dmg); } c.globalAlpha = Math.max(0, 1 - (k - 0.6)/0.4); c.fillStyle = col; c.beginPath(); c.arc(p.x, p.y, R*1.8*(0.6 + (k - 0.6)), 0, TAU); c.fill(); c.globalAlpha = 1; } if (k >= 1) p.dead = true; }
+    else if (p.k === 'blast'){ const k = p.t/0.35; c.globalAlpha = Math.max(0, 1 - k); c.fillStyle = '#FFB03D'; c.beginPath(); c.arc(p.x, p.y, R*(0.6 + k*1.4), 0, TAU); c.fill(); c.globalAlpha = 1; if (k >= 1) p.dead = true; }
+    else if (p.k === 'boom'){ const k = Math.min(1, p.t/0.9), [tx, ty] = T[p.ti], out = k < 0.5 ? k*2 : (1 - k)*2, x = p.x + (tx - p.x)*out, y = p.y + (ty - p.y)*out - Math.sin(out*Math.PI)*s*0.12;
+      if (!p.hit && k >= 0.5){ p.hit = true; hit(p.ti, p.dmg); } c.save(); c.translate(x, y); c.rotate(p.t*18); c.fillStyle = col; c.strokeStyle = '#16122E'; c.lineWidth = 2; c.beginPath(); c.moveTo(-s*0.04, 0); c.quadraticCurveTo(0, -s*0.03, s*0.04, 0); c.quadraticCurveTo(0, -s*0.005, -s*0.04, 0); c.fill(); c.stroke(); c.restore(); if (k >= 1) p.dead = true; }
+    else if (p.k === 'swing'){ const k = p.t/0.3; if (!p.done && k > 0.4){ p.done = true; hit(1, p.dmg); hit(0, p.dmg); } c.globalAlpha = Math.max(0, 1 - k); c.strokeStyle = col; c.lineWidth = s*0.03; c.lineCap = 'round'; c.beginPath(); c.arc(p.x, p.y, s*0.5, -0.9 + k*0.4, 0.9 + k*0.4); c.stroke(); c.globalAlpha = 1; if (k >= 1) p.dead = true; }
+  }
+  c.restore(); P.ps = P.ps.filter(p => !p.dead).slice(-60);
+  // damage numbers
+  c.save(); c.font = `800 ${Math.round(s*0.09)}px system-ui, sans-serif`; c.textAlign = 'center'; c.lineWidth = 3; c.strokeStyle = '#16122E';
+  for (const h of P.hits){ h.t += dt; c.globalAlpha = Math.max(0, 1 - h.t/0.8); c.fillStyle = '#FFE07A'; const y = h.y - h.t*s*0.15; c.strokeText(h.v, h.x, y); c.fillText(h.v, h.x, y); }
+  c.restore(); P.hits = P.hits.filter(h => h.t < 0.8).slice(-20);
+}
+function lkCompare(det, id){
+  const cur = save.weapon; if (!cur || cur === id || !WPN[cur]) return null; const a = WPN[cur], b = WPN[id];
+  const box = el('div', 'lkcmp'); box.appendChild(el('small', 'lkh', `Compared with your starting weapon (${a.name}), at Lv1`));
+  const row = (k, va, vb, fmt, higher = true) => { if (va == null || vb == null) return; const r = el('div', 'lkr'), d = vb - va, good = higher ? d > 0.0001 : d < -0.0001, bad = higher ? d < -0.0001 : d > 0.0001;
+    r.append(el('span', null, k), el('b', null, fmt(vb)), el('em', good ? 'up' : bad ? 'down' : 'eq', Math.abs(d) < 0.0001 ? '=' : (d > 0 ? '▲ ' : '▼ ') + fmt(Math.abs(d)))); box.appendChild(r); };
+  row('Damage per hit', a.dmg, b.dmg, v => String(Math.round(v)));
+  row('Attacks per second', a.cd ? 1/a.cd : null, b.cd ? 1/b.cd : null, v => v.toFixed(2));
+  row('Projectiles', a.shots || 1, b.shots || 1, v => String(Math.round(v)));
+  row('Damage per second', lkDps(cur), lkDps(id), v => String(Math.round(v)));
+  if (box.children.length < 2) return null;
+  box.appendChild(el('small', 'note', 'Rough guide: area, chain and companion effects are not counted.')); return box;
+}
+{ const _rt = renderLoadoutTab; renderLoadoutTab = function(body){ const r = _rt.apply(this, arguments);
+    try { const det = body.querySelector('.wdetail'), id = lockSel, w = WPN[id]; if (!det || !w) return r;
+      const kv = det.querySelector('.kvs');
+      const pv = el('div', 'lkprev'); const cnv = document.createElement('canvas'); cnv.width = 480; cnv.height = 240; cnv.setAttribute('aria-label', 'Attack preview of ' + w.name);
+      pv.append(el('small', 'lkh', 'Attack preview (illustration)'), cnv); PREVIEWS.push({canvas:cnv, draw:(c, now) => lkPreview(c, 240, id, now)});
+      if (kv) kv.before(pv); else det.appendChild(pv);
+      if (kv && save.weapons.includes(id)){ const x = el('div', 'kv'); x.append(el('span', null, 'Source'), el('b', null, weaponSource(id))); kv.appendChild(x); }
+      const cmp = lkCompare(det, id); if (cmp){ if (kv) kv.after(cmp); else det.appendChild(cmp); } } catch(err){ console.error(err); }
+    return r; }; }
+// equip feedback
+let lkPrevStart = null;
+{ const _rl = renderLocker; renderLocker = function(){ const before = lkPrevStart; const r = _rl.apply(this, arguments);
+    try { if (before && save.weapon !== before && state === 'locker'){ const slot = [...document.querySelectorAll('#locker .eqslot')].find(b => (b.getAttribute('aria-label') || '').startsWith('Starting weapon')); if (slot){ slot.classList.remove('lkpop'); void slot.offsetWidth; slot.classList.add('lkpop'); }
+        beep(660, 0.08, 'triangle', 0.04); beep(990, 0.18, 'triangle', 0.04, null, 0.08); } } catch(err){}
+    lkPrevStart = save.weapon; return r; }; }
+{ const st = document.createElement('style'); st.textContent = `
+.lkprev{width:100%; display:flex; flex-direction:column; gap:4px; margin:6px 0}
+.lkprev canvas{width:100%; height:auto; aspect-ratio:2/1; border-radius:12px; border:2px solid var(--line); background:#14112E}
+.lkh{font-size:10px; font-weight:900; letter-spacing:.1em; text-transform:uppercase; color:var(--muted); text-align:left}
+.lkcmp{width:100%; display:flex; flex-direction:column; gap:4px; margin:6px 0; padding:8px 10px; border-radius:12px; background:rgba(8,6,26,.3); border:2px solid var(--line)}
+.lkr{display:grid; grid-template-columns:1fr auto 76px; gap:8px; align-items:center; font-size:13px} .lkr span{color:var(--muted); text-align:left} .lkr em{font-style:normal; font-weight:800; font-size:12px; text-align:right}
+.lkr em.up{color:#7BE38A} .lkr em.down{color:#FF6B6B} .lkr em.eq{color:var(--muted)}
+.eqslot.lkpop{animation:lkPop .6s cubic-bezier(.3,1.6,.5,1)} .eqslot.lkpop .esbox{box-shadow:0 0 0 3px var(--line), 0 0 26px var(--rc, #FFC83D)}
+@keyframes lkPop{0%{transform:scale(1)} 30%{transform:scale(1.22) rotate(-4deg)} 100%{transform:scale(1)}}
+`; document.head.appendChild(st); }
+
+// =====================================================================
 // FIRST-TIME TUTORIAL · "Your First Adventure"
 // A brand-new player is guided through the real game: welcome card, Arin the guide in Forgotten Forest, a glowing
 // trail along walkable ground to the real dungeon gate, the real dungeon panel (Normal, stage 1), then inside the
