@@ -26369,6 +26369,624 @@ addEventListener('keydown', e => { if (e.code === 'F8'){ NDG.on = !NDG.on; if (!
   NDG.el.textContent = L.join('\n'); })();
 { const s = document.createElement('style'); s.textContent = `#netdbg{position:fixed;left:8px;bottom:8px;z-index:90;margin:0;padding:8px 10px;background:rgba(5,4,15,.82);color:#9BF6B0;font:12px/1.45 ui-monospace,Menlo,monospace;border:1px solid #2B2370;border-radius:8px;pointer-events:none;white-space:pre}`; document.head.appendChild(s); }
 
+// =====================================================================
+// CHALLENGE OVERHAUL · enemy archetypes, the Run Director (modifiers + encounter phases) and anti-AFK pressure.
+// Difficulty from behaviour, not only from health:
+//  Shieldbearer   a front shield blocks 80% of damage from the side it faces (it turns slowly: flank it); every few
+//                 seconds it bashes and is left exposed (+50% damage taken) for a moment
+//  Healer         keeps its distance and heals hurt allies nearby with visible beams: a priority target
+//  Summoner       opens portals (a short warning) and calls fast minions, up to four at a time
+//  Exploder       rushes in, lights a fuse next to you (a growing red warning ring) and blows up; kill it first
+//  Sniper         keeps away and paints a laser line for a second before it fires along it (step off the line)
+//  Commander      an elite that speeds up and toughens allies around it and orders short charges (horn + ring)
+//  Controller     drops toxic ground where you stand, with a warning ring first; you have to keep moving
+// Every dangerous attack goes through the game's existing hazard zones, so it has a visible warning, a sound,
+// a reaction window, it works in Duos and it respects invincibility frames. Archetypes appear from stage 2
+// (never in a brand-new player's first stage), more often deeper into a run, with caps per type.
+// =====================================================================
+const OVK = {
+  shield:{name:'Shieldbearer', from:['tank'], max:3, col:'#AEB6C2'},
+  healer:{name:'Healer', from:['ranged'], max:2, col:'#5BD66B'},
+  summoner:{name:'Summoner', from:['ranged'], max:2, col:'#B05CFF'},
+  exploder:{name:'Exploder', from:['grunt', 'fast'], max:4, col:'#FF5A3D'},
+  sniper:{name:'Sniper', from:['ranged'], max:3, col:'#FF2E4A'},
+  commander:{name:'Commander', from:['tank', 'grunt'], max:1, col:'#FFC83D'},
+  controller:{name:'Controller', from:['ranged', 'grunt'], max:2, col:'#9BE34B'},
+};
+const OV = {phaseT:0, last:null, lastHard:false, mod:null, afk:{x:0, y:0, t:0, n:0}, fx:[]};
+const ovThreat = () => { try { return typeof thX === 'function' ? thX() : Math.max(0, (run.t - 300)/300); } catch(e){ return 0; } };
+const ovNew = () => run && run.w === 0 && run.stage <= 1 && !run.endless;   // a brand-new player's first stage stays classic
+const ovHost = () => !(typeof duoGuest === 'function' && duoGuest());
+function ovChance(){
+  if (!run || ovNew() || run.wbFight || run.arena || run.training) return 0;
+  if (typeof tutStep === 'function' && ['fight', 'xp', 'upgrade', 'survive'].includes(tutStep())) return 0;
+  let p = 0.035 + 0.008*Math.min(10, run.stage) + 0.02*Math.min(4, ovThreat()) + 0.015*Math.min(6, run.pushes || 0);
+  if (OV.mod && (OV.mod.id === 'uprising' || OV.mod.id === 'corrupted')) p += 0.05;
+  return Math.min(0.2, p);
+}
+function ovCount(k){ let n = 0; for (const e of enemies) if (!e.dead && e.ovK === k) n++; return n; }
+function ovApply(e, k){
+  const K = OVK[k]; if (!K || !e || e.ovK) return e; e.ovK = k; e.ovT = rnd(1.5, 3); e.ovF = Math.atan2(P.y - e.y, P.x - e.x);
+  e.name = K.name + (e.name ? ' ' + e.name.split(' ').slice(-1)[0] : '');
+  if (k === 'shield'){ e.hp *= 1.3; e.max = e.hp; e.spd *= 0.85; }
+  if (k === 'exploder'){ e.spd *= 1.25; e.hp *= 0.7; e.max = e.hp; }
+  if (k === 'sniper' || k === 'healer' || k === 'summoner' || k === 'controller'){ e.beh = 'shoot'; e.shootT = 99; }
+  if (k === 'commander'){ e.elite = true; e.hp *= 2.6; e.max = e.hp; e.r *= 1.2; e.xp *= 3; }
+  return e;
+}
+{ const _sm = spawnMob; spawnMob = function(role, o={}){ const e = _sm.apply(this, arguments);
+    try { if (!ovHost() || !run || !e || o.ovNo || e.goblin || e.mir || !['grunt', 'fast', 'tank', 'ranged'].includes(role)) return e;
+      const forced = o.ovK; if (forced){ ovApply(e, forced); return e; }
+      if (e.golden) return e;
+      if (Math.random() < ovChance()){ const opts = Object.keys(OVK).filter(k => OVK[k].from.includes(role) && ovCount(k) < OVK[k].max); if (opts.length) ovApply(e, opts[Math.floor(Math.random()*opts.length)]); } } catch(err){ console.error(err); }
+    return e; }; }
+// ---------- damage: the shield ----------
+{ const _dd = dealDamage; dealDamage = function(e, dmg, o){
+    if (e && e.ovK === 'shield' && !e.dead && !(o && o.src === 'dot')){
+      const toP = Math.atan2(P.y - e.y, P.x - e.x), front = Math.abs(angDiff(toP, e.ovF)) < 1.15;
+      if (e.ovDrop > 0) dmg *= 1.5;
+      else if (front){ dmg *= (o && o.src === 'aoe') ? 0.5 : 0.2; if (!e.ovClk || run.t - e.ovClk > 0.12){ e.ovClk = run.t; OV.fx.push({k:'spark', x:e.x + Math.cos(e.ovF)*e.r*1.1, y:e.y + Math.sin(e.ovF)*e.r*1.1, t:0}); ovSnd('ov_block', e, 0.28, 60); } } }
+    return _dd.call(this, e, dmg, o); }; }
+function ovSnd(n, e, vol, cd){ try { if (typeof AU !== 'undefined' && AU.ctx) AU.play(n, {x:e ? e.x : P.x, y:e ? e.y : P.y, vol, key:n, cd:cd || 120, max:2, pri:2, budget:'eshot', group:'enemy'}); } catch(err){} }
+// ---------- behaviour (the host runs it; a Duos partner sees the zones and the looks) ----------
+function ovTick(dt){
+  const thr = ovThreat();
+  for (const e of enemies){ if (e.dead || !e.ovK || e.born > 0) continue; const d = Math.hypot(P.x - e.x, P.y - e.y), toP = Math.atan2(P.y - e.y, P.x - e.x); e.ovT -= dt;
+    switch (e.ovK){
+      case 'shield': { const turn = (e.ovDrop > 0 ? 0 : 1.4)*dt, df = angDiff(toP, e.ovF); e.ovF += Math.max(-turn, Math.min(turn, df));
+        if (e.ovDrop > 0) e.ovDrop -= dt;
+        if (e.ovWind > 0){ e.ovWind -= dt; if (e.ovWind <= 0){ e.dash = 0.28; e.dashA = e.ovF; e.ovDrop = 1.4; e.x += Math.cos(e.ovF)*34*S; e.y += Math.sin(e.ovF)*34*S; shake = Math.max(shake, reduce ? 0 : 2); ovSnd('ov_bash', e, 0.3, 200); if (d < e.r + P.r*S + 40*S) hurt(e.dmg*0.9); } }
+        else if (e.ovT <= 0 && d < 260*S){ e.ovT = rnd(4.8, 6.2); e.ovWind = 0.55; }
+        break; }
+      case 'healer': if (e.ovT <= 0){ e.ovT = 3.2; const hurtA = enemies.filter(a => !a.dead && a !== e && a.hp < a.max*0.95 && !a.wb && Math.hypot(a.x - e.x, a.y - e.y) < 240*S).sort((a, b) => a.hp/a.max - b.hp/b.max).slice(0, 3);
+          for (const a of hurtA){ const amt = a.max*(a.attacks ? 0.03 : 0.12); a.hp = Math.min(a.max, a.hp + amt); OV.fx.push({k:'heal', e, a, t:0}); } if (hurtA.length) ovSnd('ov_heal', e, 0.25, 300); } break;
+      case 'summoner': if (e.ovT <= 0){ e.ovT = 5.5 + rnd(0, 1); const mine = enemies.filter(a => !a.dead && a.ovBy === e).length;
+          if (mine < 4 && enemies.length < CAP - 4){ for (let i=0;i<2;i++){ const a = rnd(0, TAU), x = clamp(e.x + Math.cos(a)*60*S, 20, W - 20), y = clamp(e.y + Math.sin(a)*60*S, 30, H - 20);
+              zones.push({kind:'burst', x, y, r:24*S, warn:0.7, dmg:0, col:'#B05CFF'});
+              run.delayed.push({t:0.7, fn:() => { if (e.dead) return; const m = spawnMob('fast', {x, y, ovNo:true}); m.ovBy = e; m.name = 'Summoned ' + m.name; m.hp *= thr >= 2 ? 1 : 0.6; m.max = m.hp; m.col = '#8A5CE0'; }}); }
+            ovSnd('ov_summon', e, 0.3, 400); } } break;
+      case 'exploder': if (e.ovFuse > 0){ e.ovFuse -= dt; e.x = e.ovFx; e.y = e.ovFy; if (e.ovFuse <= 0){ e.ovBoom = true; e.dead = true; e.hp = 0; burst(e.x, e.y, '#FF5A3D', 26, 1.4); ring(e.x, e.y, 90*S, '#FF8A3A', 0.4); shake = Math.max(shake, reduce ? 0 : 5); ovSnd('ov_boom', e, 0.45, 80); } }
+        else if (d < 78*S){ const fuse = Math.max(0.6, 0.9 - 0.06*thr); e.ovFuse = fuse; e.ovFx = e.x; e.ovFy = e.y; const z = {kind:'burst', x:e.x, y:e.y, r:88*S, warn:fuse, dmg:e.dmg*2.3, col:'#FF5A3D'}; zones.push(z); e.ovZone = z; ovSnd('ov_fuse', e, 0.35, 150); } break;
+      case 'sniper': e.shootT = 99; if (d < 220*S){ e.x -= Math.cos(toP)*e.spd*0.6*dt; e.y -= Math.sin(toP)*e.spd*0.6*dt; e.x = clamp(e.x, 20, W - 20); e.y = clamp(e.y, 30, H - 20); }
+        if (e.ovT <= 0 && d > 160*S && d < 760*S){ e.ovT = rnd(3.6, 4.4) - Math.min(0.8, 0.15*thr); const L = Math.hypot(W, H), n = thr >= 2 ? 3 : 1;
+          for (let i=0;i<n;i++){ const a = toP + (i - (n - 1)/2)*0.2; zones.push({kind:'beam', x1:e.x, y1:e.y, x2:e.x + Math.cos(a)*L, y2:e.y + Math.sin(a)*L, w:14*S, warn:1.0, life:0.18, dmg:e.dmg*1.7, col:'#FF2E4A'}); }
+          e.ovAim = 1.0; ovSnd('ov_aim', e, 0.25, 300); }
+        if (e.ovAim > 0) e.ovAim -= dt; break;
+      case 'commander': { const R = 210*S; for (const a of enemies){ if (a.dead || a === e || a.attacks) continue; const near = Math.hypot(a.x - e.x, a.y - e.y) < R;
+          if (a._bs == null){ a._bs = a.spd; a._bd = a.dmg; } a.spd = a._bs*(near ? 1.22 : 1)*(a.ovRally > 0 ? 1.8 : 1); a.dmg = a._bd*(near ? 1.2 : 1); a.ovBuff = near; if (a.ovRally > 0) a.ovRally -= dt; }
+        if (e.ovT <= 0 && d < 520*S){ e.ovT = 7; e.ovHorn = 0.55; ovSnd('ov_rally', e, 0.4, 600); }
+        if (e.ovHorn > 0){ e.ovHorn -= dt; if (e.ovHorn <= 0) for (const a of enemies) if (!a.dead && !a.attacks && Math.hypot(a.x - e.x, a.y - e.y) < R) a.ovRally = 0.7; }
+        break; }
+      case 'controller': if (e.ovT <= 0 && d < 520*S){ e.ovT = rnd(5, 6); const mine = zones.filter(z => z.ovBy === e && (z.warn > 0 || z.life > 0)).length;
+          if (mine < 2){ zones.push({kind:'pool', x:P.x, y:P.y, r:62*S, warn:1.0, life:4.5, dps:e.dmg*0.8, slow:0.25, col:'rgba(140,220,70,.55)', ovBy:e}); ovSnd('ov_pool', e, 0.3, 300); } } break;
+    } }
+  // an exploder killed before its fuse ran out takes its warning with it
+  for (const e of enemies) if (e.dead && e.ovZone && !e.ovBoom){ const z = e.ovZone; e.ovZone = null; const i = zones.indexOf(z); if (i >= 0) zones.splice(i, 1); }
+  // allies lose the commander's buff when it falls
+  if (!enemies.some(e => !e.dead && e.ovK === 'commander')) for (const a of enemies) if (a._bs != null && (a.ovBuff || a.ovRally > 0)){ a.spd = a._bs; a.dmg = a._bd; a.ovBuff = false; a.ovRally = 0; }
+  for (const f of OV.fx) f.t += dt; OV.fx = OV.fx.filter(f => f.t < (f.k === 'heal' ? 0.45 : 0.18));
+}
+// ---------- looks: each archetype reads at a glance ----------
+{ const _dm = drawMob; drawMob = function(c, e, now, look){ const r = _dm.apply(this, arguments); try { if (e && e.ovK && !e.dead) ovDraw(c, e, now); } catch(err){} return r; }; }
+function ovDraw(c, e, now){
+  const R = e.r, k = e.ovK; c.save(); c.lineCap = 'round';
+  if (k === 'shield'){ const a = e.ovF != null ? e.ovF : 0, drop = e.ovDrop > 0, wind = e.ovWind > 0;
+    c.translate(e.x, e.y); c.rotate(a + (drop ? 0.9 : 0)); const rr = R*1.18;
+    c.strokeStyle = '#08061A'; c.lineWidth = 11*S; c.beginPath(); c.arc(0, 0, rr, -0.95, 0.95); c.stroke();
+    c.strokeStyle = drop ? '#7A808C' : wind ? '#FFE07A' : '#AEB6C2'; c.lineWidth = 7*S; c.beginPath(); c.arc(0, 0, rr, -0.95, 0.95); c.stroke();
+    c.strokeStyle = drop ? '#5A606C' : '#FFC83D'; c.lineWidth = 2*S; c.beginPath(); c.arc(0, 0, rr + 3*S, -0.85, 0.85); c.stroke();
+    if (drop){ c.strokeStyle = '#08061A'; c.lineWidth = 1.5*S; c.beginPath(); c.moveTo(rr - 4*S, -6*S); c.lineTo(rr + 3*S, 2*S); c.lineTo(rr - 2*S, 8*S); c.stroke(); } }
+  else if (k === 'healer'){ const y = e.y - R*1.75 + Math.sin(now*3)*2*S; c.fillStyle = '#5BD66B'; c.strokeStyle = '#08061A'; c.lineWidth = 2*S; c.beginPath(); c.rect(e.x - 3*S, y - 8*S, 6*S, 16*S); c.rect(e.x - 8*S, y - 3*S, 16*S, 6*S); c.fill(); c.stroke();
+    c.globalAlpha = 0.35 + 0.15*Math.sin(now*4); c.strokeStyle = '#9BF6B0'; c.lineWidth = 2*S; c.beginPath(); c.ellipse(e.x, e.y + R*0.8, R*1.2, R*0.4, 0, 0, TAU); c.stroke(); }
+  else if (k === 'summoner'){ for (let i=0;i<3;i++){ const a = now*2.4 + i*TAU/3, x = e.x + Math.cos(a)*R*1.35, y = e.y - R*0.3 + Math.sin(a)*R*0.5; c.fillStyle = '#B05CFF'; c.strokeStyle = '#08061A'; c.lineWidth = 1.5*S; c.beginPath(); c.moveTo(x, y - 6*S); c.lineTo(x + 4*S, y); c.lineTo(x, y + 6*S); c.lineTo(x - 4*S, y); c.closePath(); c.fill(); c.stroke(); } }
+  else if (k === 'exploder'){ const f = e.ovFuse > 0, pulse = f ? 0.5 + 0.5*Math.sin(now*40) : 0.25 + 0.2*Math.sin(now*6);
+    c.globalAlpha = pulse; c.fillStyle = '#FF5A3D'; c.beginPath(); c.arc(e.x, e.y, R*1.05, 0, TAU); c.fill(); c.globalAlpha = 1;
+    c.strokeStyle = '#3A2A20'; c.lineWidth = 2*S; c.beginPath(); c.moveTo(e.x, e.y - R*0.9); c.quadraticCurveTo(e.x + 6*S, e.y - R*1.3, e.x + 3*S, e.y - R*1.55); c.stroke();
+    c.fillStyle = Math.floor(now*20) % 2 ? '#FFE07A' : '#FF8A1E'; c.beginPath(); c.arc(e.x + 3*S, e.y - R*1.58, (f ? 4.5 : 3)*S, 0, TAU); c.fill(); }
+  else if (k === 'sniper'){ const y = e.y - R*1.5; c.strokeStyle = '#FF2E4A'; c.lineWidth = 2*S; c.beginPath(); c.arc(e.x, y, 6*S, 0, TAU); c.moveTo(e.x - 10*S, y); c.lineTo(e.x + 10*S, y); c.moveTo(e.x, y - 10*S); c.lineTo(e.x, y + 10*S); c.stroke();
+    if (e.ovAim > 0){ c.globalAlpha = 0.9; c.fillStyle = '#FF2E4A'; c.beginPath(); c.arc(e.x, e.y, 4*S, 0, TAU); c.fill(); } }
+  else if (k === 'commander'){ c.globalAlpha = 0.18 + 0.08*Math.sin(now*3); c.strokeStyle = '#FFC83D'; c.lineWidth = 2.5*S; c.setLineDash([8*S, 8*S]); c.lineDashOffset = -now*20; c.beginPath(); c.arc(e.x, e.y, 210*S, 0, TAU); c.stroke(); c.setLineDash([]); c.globalAlpha = 1;
+    const px = e.x + R*0.9, py = e.y - R*1.9; c.strokeStyle = '#5A3A1E'; c.lineWidth = 3*S; c.beginPath(); c.moveTo(px, e.y); c.lineTo(px, py); c.stroke();
+    c.fillStyle = '#E0283C'; c.strokeStyle = '#08061A'; c.lineWidth = 1.5*S; c.beginPath(); c.moveTo(px, py); c.lineTo(px + 16*S + Math.sin(now*6)*2*S, py + 5*S); c.lineTo(px, py + 11*S); c.closePath(); c.fill(); c.stroke();
+    if (e.ovHorn > 0){ c.globalAlpha = 0.8; c.strokeStyle = '#FFE07A'; c.lineWidth = 3*S; c.beginPath(); c.arc(e.x, e.y, R*(1.4 + (0.55 - e.ovHorn)*3), 0, TAU); c.stroke(); } }
+  else if (k === 'controller'){ for (let i=0;i<5;i++){ const a = i*TAU/5 + now*0.8, x = e.x + Math.cos(a)*R*1.1, y = e.y + R*0.6 + Math.sin(a)*R*0.35 + ((now*1.5 + i*0.2) % 1)*6*S; c.fillStyle = '#9BE34B'; c.globalAlpha = 0.8; c.beginPath(); c.arc(x, y, 2.5*S, 0, TAU); c.fill(); } }
+  c.restore();
+  if (e.ovBuff && !e.ovK){ c.save(); c.globalAlpha = 0.6; c.strokeStyle = '#FFC83D'; c.lineWidth = 1.5*S; c.beginPath(); c.arc(e.x, e.y - e.r*1.25, 3*S, 0, TAU); c.stroke(); c.restore(); }
+}
+{ const _dr = draw; draw = function(now){ const r = _dr.apply(this, arguments);
+    try { if (run && state !== 'menu'){ const c = ctx; c.save(); for (const f of OV.fx){
+          if (f.k === 'heal' && !f.e.dead && !f.a.dead){ c.globalAlpha = 1 - f.t/0.45; c.strokeStyle = '#7BF08E'; c.lineWidth = 3*S; c.beginPath(); c.moveTo(f.e.x, f.e.y); c.lineTo(f.a.x, f.a.y); c.stroke(); c.fillStyle = '#C8FFD2'; c.font = `900 ${14*S}px Rubik, system-ui, sans-serif`; c.textAlign = 'center'; c.fillText('+', f.a.x, f.a.y - f.a.r - f.t*30*S); }
+          else if (f.k === 'spark'){ c.globalAlpha = 1 - f.t/0.18; c.fillStyle = '#FFF4C8'; c.beginPath(); c.arc(f.x, f.y, (3 + f.t*30)*S, 0, TAU); c.fill(); } } c.restore();
+        ovDrawHud(); } } catch(err){ console.error(err); }
+    return r; }; }
+
+// ---------- the Run Director: a modifier for the run, and varied encounter phases ----------
+const OV_MODS = [
+  {id:'storm', name:'Arcane Storm', col:'#9B7BFF', coin:1.15, desc:'Arcane strikes rain down near you every few seconds. +15% coins.'},
+  {id:'uprising', name:'Elite Uprising', col:'#FFC83D', coin:1.2, desc:'More elites and special enemies. +20% coins.'},
+  {id:'frenzy', name:'Treasure Frenzy', col:'#FFE07A', coin:1.5, desc:'+50% coins, but enemies arrive faster.'},
+  {id:'volatile', name:'Volatile Battlefield', col:'#FF8A3A', coin:1.15, desc:'Some defeated enemies leave an explosion behind (watch for the ring). +15% coins.'},
+  {id:'hunter', name:"Hunter's Mark", col:'#E0283C', coin:1.2, desc:'A powerful hunter tracks you down every 45 seconds. Defeat it for a coin bounty. +20% coins.'},
+  {id:'corrupted', name:'Corrupted Swarm', col:'#B05CFF', coin:1.25, desc:'Enemies are tougher and more of them gain special abilities. +25% coins.'},
+];
+function ovPickMod(){
+  OV.mod = null; if (!run || ovNew() || run.wbFight || run.arena || run.training || run.endless) return;
+  if (typeof tutActive === 'function' && tutActive()) return;
+  if (Math.random() > 0.5) return;
+  const prev = save.ovLastMod; const pool = OV_MODS.filter(m => m.id !== prev); OV.mod = pool[Math.floor(Math.random()*pool.length)]; save.ovLastMod = OV.mod.id;
+  run.ovMod = OV.mod.id; setTimeout(() => { if (run && OV.mod) banner(OV.mod.name.toUpperCase(), OV.mod.desc, OV.mod.col); }, 2600);
+}
+{ const _ss = startStage; startStage = function(){ OV.phaseT = 40; OV.last = null; OV.lastHard = false; OV.afk = {x:0, y:0, t:0, n:0}; OV.fx = []; OV.hunterT = 30; const r = _ss.apply(this, arguments); try { ovPickMod(); } catch(e){} return r; }; }
+{ const _dv = derive; derive = function(){ const r = _dv.apply(this, arguments); if (run && OV.mod && st) st.coinMul *= OV.mod.coin; return r; }; }
+{ const _sp = spawnTick; spawnTick = function(dt){ if (run && OV.mod && OV.mod.id === 'frenzy') dt *= 1.15; return _sp.call(this, dt); }; }
+{ const _sm = spawnMob; spawnMob = function(role){ const e = _sm.apply(this, arguments); try { if (e && run && OV.mod && OV.mod.id === 'corrupted' && !e.attacks && !e.goblin){ e.hp *= 1.15; e.max = e.hp; } } catch(err){} return e; }; }
+{ const _ee = extraElite; extraElite = function(){ return _ee.apply(this, arguments) + (OV.mod && OV.mod.id === 'uprising' ? 0.05 : 0); }; }
+{ const _ke = killEnemy; killEnemy = function(e){ try { if (e && e.ovZone && !e.ovBoom){ const i = zones.indexOf(e.ovZone); if (i >= 0) zones.splice(i, 1); e.ovZone = null; } } catch(err){} const r = _ke.apply(this, arguments);
+    try { if (run && OV.mod && OV.mod.id === 'volatile' && e && !e.attacks && !e.goblin && !e.ovBoom && Math.random() < 0.12 && zones.length < 40) zones.push({kind:'burst', x:e.x, y:e.y, r:60*S, warn:1.0, dmg:e.dmg*1.1, col:'#FF8A3A'});
+      if (e && e.ovHunter){ gainCoins(60 + 20*run.w, true); banner('HUNTER DEFEATED', 'Bounty collected', '#FFC83D'); } } catch(err){} return r; }; }
+// encounter phases: a few times a stage the Director picks one, with rules so they never stack unfairly
+const OV_PHASES = [
+  {id:'ambush', w:3, hard:true, name:'ELITE AMBUSH', sub:'Special elites close in from two sides', col:'#FFC83D'},
+  {id:'assault', w:3, hard:true, name:'RANGED ASSAULT', sub:'Shieldbearers cover snipers and a healer', col:'#FF2E4A'},
+  {id:'rush', w:3, hard:true, name:'SWARM RUSH', sub:'A wave pours in from one side', col:'#FF8A3A'},
+  {id:'goblin', w:2, hard:false, name:'', sub:'', col:'#7BD94F'},
+  {id:'meteor', w:2, hard:false, name:'METEOR SHOWER', sub:'Watch the ground: move out of the circles', col:'#FF8A1E'},
+  {id:'support', w:2, hard:false, name:'REINFORCEMENTS', sub:'A commander arrives with its squad', col:'#FFC83D'},
+];
+function ovBossUp(){ return enemies.some(e => !e.dead && (e.attacks || e.role === 'mini')); }
+function ovDirector(dt){
+  if (!run || ovNew() || run.wbFight || run.arena || run.training) return;
+  if (typeof tutActive === 'function' && tutActive()) return;
+  const remain = run.endless ? Infinity : run.dur - run.t;
+  OV.phaseT -= dt*(1 + 0.15*Math.min(6, run.pushes || 0));
+  if (OV.phaseT <= 0 && remain > 25 && !ovBossUp() && run.phase !== 'boss'){
+    OV.phaseT = rnd(48, 66);
+    const pool = OV_PHASES.filter(p => p.id !== OV.last && !(p.hard && OV.lastHard) && !(p.id === 'goblin' && run.goblinDone));
+    let tot = 0; for (const p of pool) tot += p.w; let x = Math.random()*tot, ph = pool[0]; for (const p of pool){ x -= p.w; if (x <= 0){ ph = p; break; } }
+    OV.last = ph.id; OV.lastHard = ph.hard; ovRunPhase(ph);
+  }
+  if (OV.meteor > 0){ OV.meteor -= dt; OV.metT = (OV.metT || 0) - dt; if (OV.metT <= 0){ OV.metT = 0.7; for (let i=0;i<2;i++) zones.push({kind:'burst', x:clamp(P.x + rnd(-220, 220)*S, 30, W - 30), y:clamp(P.y + rnd(-180, 180)*S, 40, H - 30), r:rnd(44, 60)*S, warn:1.3, dmg:12*dmgScale(), col:'#FF8A1E', missile:true}); } }
+  if (OV.mod && OV.mod.id === 'storm'){ OV.stormT = (OV.stormT == null ? 6 : OV.stormT) - dt; if (OV.stormT <= 0){ OV.stormT = rnd(6, 9); for (let i=0;i<3;i++) zones.push({kind:'burst', x:clamp(P.x + rnd(-200, 200)*S, 30, W - 30), y:clamp(P.y + rnd(-160, 160)*S, 40, H - 30), r:52*S, warn:1.25 + i*0.12, dmg:11*dmgScale(), col:'#9B7BFF'}); } }
+  if (OV.mod && OV.mod.id === 'hunter'){ OV.hunterT -= dt; if (OV.hunterT <= 0 && !enemies.some(e => !e.dead && e.ovHunter)){ OV.hunterT = 45; const h = spawnMob('tank', {elite:true, ovNo:true}); h.ovHunter = true; h.name = 'The Hunter'; h.col = '#7A0A18'; h.spd *= 1.6; h.hp *= 1.8; h.max = h.hp; banner('THE HUNTER IS COMING', 'It tracks you. Defeat it for a bounty', '#E0283C'); ovSnd('ov_rally', null, 0.4, 600); } }
+}
+function ovEdge(side){ const m = 30; return side === 0 ? {x:m, y:rnd(60, H - 60)} : side === 1 ? {x:W - m, y:rnd(60, H - 60)} : side === 2 ? {x:rnd(60, W - 60), y:50} : {x:rnd(60, W - 60), y:H - m}; }
+function ovRunPhase(ph){
+  if (ph.name) banner(ph.name, ph.sub, ph.col);
+  const sideFar = P.x < W/2 ? 1 : 0, room = () => enemies.length < CAP - 3;
+  if (ph.id === 'ambush'){ for (const sd of [0, 1]){ const p = ovEdge(sd); const ks = ['commander', 'exploder', 'shield']; if (room()) spawnMob(sd ? 'tank' : 'grunt', {x:p.x, y:p.y, elite:true, ovK:ks[Math.floor(Math.random()*ks.length)] === 'commander' && ovCount('commander') ? 'exploder' : ks[Math.floor(Math.random()*3)]}); if (room()) spawnMob('fast', {x:p.x, y:p.y + 30*S, ovK:'exploder'}); } }
+  else if (ph.id === 'assault'){ const p = ovEdge(sideFar); if (room()) spawnMob('tank', {x:p.x, y:p.y, ovK:'shield'}); if (room()) spawnMob('tank', {x:p.x, y:clamp(p.y + 60*S, 40, H - 40), ovK:'shield'}); for (let i=0;i<2;i++) if (room()) spawnMob('ranged', {x:p.x, y:clamp(p.y - 40*S + i*90*S, 40, H - 40), ovK:'sniper'}); if (room()) spawnMob('ranged', {x:p.x, y:p.y, ovK:'healer'}); }
+  else if (ph.id === 'rush'){ const sd = Math.floor(Math.random()*4); for (let i=0;i<12;i++) run.delayed.push({t:0.05 + i*0.12, fn:() => { if (room()){ const p = ovEdge(sd); spawnMob(Math.random() < 0.7 ? 'fast' : 'grunt', {x:p.x, y:p.y}); } }}); }
+  else if (ph.id === 'goblin'){ if (typeof spawnGoblin === 'function'){ run.goblinDone = true; spawnGoblin(); } }
+  else if (ph.id === 'meteor'){ OV.meteor = 9; OV.metT = 0.5; }
+  else if (ph.id === 'support'){ const p = ovEdge(sideFar); if (room()) spawnMob('tank', {x:p.x, y:p.y, ovK:'commander'}); for (let i=0;i<4;i++) if (room()) spawnMob('grunt', {x:p.x, y:clamp(p.y + (i - 1.5)*40*S, 40, H - 40)}); }
+}
+// anti-AFK: standing on one spot for a long time with enemies around draws strikes onto that spot (always telegraphed)
+function ovAfk(dt){
+  if (!run || run.wbFight || run.arena || run.training || ovNew()) return; const A = OV.afk;
+  if (Math.hypot(P.x - A.x, P.y - A.y) > 70*S){ A.x = P.x; A.y = P.y; A.t = 0; return; }
+  if (enemies.filter(e => !e.dead).length < 5) return;
+  A.t += dt; if (A.t < 10) return; A.n = (A.n || 0) - dt; if (A.n > 0) return; A.n = 2.6;
+  if (!A.told){ A.told = true; banner('STAY ON THE MOVE', 'Standing still draws strikes to your spot', '#FF8A3A'); }
+  zones.push({kind:'burst', x:P.x, y:P.y, r:58*S, warn:1.25, dmg:P.maxHp*0.12/Math.max(0.2, diff().dmg), col:'#FF8A3A', missile:true});
+}
+{ const _up = update; update = function(dt){ const r = _up.apply(this, arguments);
+    try { if (run && state === 'play' && ovHost()){ ovTick(dt); ovDirector(dt); ovAfk(dt); } } catch(err){ console.error(err); }
+    return r; }; }
+// the active modifier as a small chip under the stage label
+function ovDrawHud(){ let ch = document.getElementById('ovModChip'); const show = run && OV.mod && ['play', 'paused', 'levelup', 'chest'].includes(state);
+  if (!show){ if (ch) ch.hidden = true; return; }
+  if (!ch){ ch = document.createElement('div'); ch.id = 'ovModChip'; document.body.appendChild(ch); const s = document.createElement('style'); s.textContent = '#ovModChip{position:fixed;left:50%;transform:translateX(-50%);top:calc(124px + env(safe-area-inset-top));z-index:30;font:900 11px Rubik,system-ui,sans-serif;letter-spacing:.08em;padding:3px 10px;border-radius:999px;background:rgba(14,10,40,.85);border:1.5px solid var(--mc);color:var(--mc);pointer-events:auto;cursor:help;white-space:nowrap}'; document.head.appendChild(s); }
+  ch.hidden = false; if (ch._m !== OV.mod.id){ ch._m = OV.mod.id; ch.textContent = '◆ ' + OV.mod.name.toUpperCase(); ch.title = OV.mod.desc; ch.style.setProperty('--mc', OV.mod.col); } }
+// sounds for the archetypes (synthesised, original)
+if (typeof AU !== 'undefined' && AU.def && typeof WBA !== 'undefined'){
+  const D = AU.def, L = s => AD.buf(s).length;
+  D('ov_block', () => AD.mix(L(0.3), [AS.sines(0.25, [1650, 2480, 3300], 0.08, 0), 0.35], [AS.click(0.01, 3000, 601), 0.6]), {warm:true});
+  D('ov_bash', () => AD.mix(L(0.4), [AS.thump(140, 60, 0.05, 0.3, 1), 0.8], [AS.sines(0.3, [880, 1320], 0.1, 0), 0.15]), {warm:true});
+  D('ov_heal', () => AD.mix(L(0.6), [AS.sines(0.5, [660, 990, 1320], 0.25, 0.04), 0.3]), {warm:true});
+  D('ov_summon', () => AD.mix(L(0.8), [WBA.suck(0.6, 611, 3000, 400), 0.4], [AS.sines(0.6, [220, 330], 0.3, 0), 0.2]), {warm:true});
+  D('ov_fuse', () => AD.mix(L(0.9), [AD.atk(AD.osc(0.85, AD.lin(500, 1600, 0.85), 'square'), 0.05), 0.08], [AD.biq(AD.noise(0.85, 621), 'hp', 3000, 0.7), 0.15]), {warm:true});
+  D('ov_boom', () => AD.mix(L(1.0), [WBA.boom(0.9, 110, 631, 1), 1]), {warm:true});
+  D('ov_aim', () => AD.mix(L(1.0), [AD.atk(AD.osc(0.95, AD.lin(1800, 2600, 0.95), 'sine'), 0.1), 0.15]), {warm:true});
+  D('ov_rally', () => AD.mix(L(1.0), [AD.env(AD.lp(AD.osc(0.9, 146, 'saw'), 900, 0.8), 0.05, 0.4, 0.4, 0.3), 0.4], [AD.env(AD.lp(AD.osc(0.9, 220, 'saw'), 900, 0.8), 0.05, 0.4, 0.4, 0.3), 0.25, 0.08]), {warm:true});
+  D('ov_pool', () => AD.mix(L(0.8), [WBA.amv(AD.lp(AD.noise(0.7, 641), 600, 0.8), 9, 0.7), 0.4]), {warm:true});
+}
+
+// =====================================================================
+// COMBAT FEEL · deaths that fit the creature, sharper critical hits, readable damage numbers
+//  - Deaths: slimes splash into droplets, mummies drop bandage strips and bones, ice creatures shatter, fire
+//    creatures break into embers and smoke, machines throw metal parts and sparks, wisps and shadows dissolve,
+//    mushrooms and beasts burst into spores / tufts. Picked from the enemy's own name and world.
+//  - Critical hits: a short star flash at the hit (no extra screen shake).
+//  - Damage numbers: when a lot is being hit at once, new numbers merge into a nearby number of the same kind
+//    instead of piling up, so big fights stay readable.
+// Visual only: damage, health and timings are untouched.
+// =====================================================================
+const OF = {d:[], c:[]};
+function ofStyle(e){
+  const n = (e.name || '').toLowerCase();
+  if (/ice|frost|yeti|snow|crystal/.test(n)) return 'shatter';
+  if (/slime|ooze|blob/.test(n)) return 'splash';
+  if (/mummy|skeleton|bone/.test(n)) return 'bones';
+  if (/lava|imp|demon|fire|ember|magma|golem|infernal/.test(n)) return 'embers';
+  if (/bot|drone|robot|mech|cyber|turret/.test(n)) return 'scrap';
+  if (/wisp|shadow|void|ghost|wraith|phantom/.test(n)) return 'smoke';
+  if (/mushroom|spore|shroom/.test(n)) return 'spores';
+  return ['spores', 'bones', 'shatter', 'embers', 'scrap'][Math.max(0, Math.min(4, run ? run.w : 0))];
+}
+{ const _ke = killEnemy; killEnemy = function(e){ const was = e && e.dead; const r = _ke.apply(this, arguments);
+    try { if (e && !was && !e.attacks && OF.d.length < 70){ const st = ofStyle(e), low = SET.particles === 'low', n = low ? 5 : (e.role === 'mini' || e.elite) ? 16 : 9, R = e.r, ps = [];
+        for (let i=0;i<n;i++){ const a = Math.random()*TAU, sp = (60 + Math.random()*140)*S*(st === 'smoke' ? 0.35 : 1);
+          ps.push({x:e.x + Math.cos(a)*R*0.4, y:e.y + Math.sin(a)*R*0.4, vx:Math.cos(a)*sp, vy:Math.sin(a)*sp - (st === 'embers' || st === 'smoke' ? 40*S : st === 'splash' || st === 'bones' || st === 'scrap' ? 120*S : 0), rot:Math.random()*TAU, vr:(Math.random() - 0.5)*12, s:(0.6 + Math.random()*0.8)*R*0.32}); }
+        OF.d.push({st, x:e.x, y:e.y, r:R, col:e.col || '#FFFFFF', t:0, life:st === 'smoke' ? 0.75 : 0.6, ps}); } } catch(err){}
+    return r; }; }
+// critical hits: a little star flash
+{ const _nm = num; num = function(x, y, v, kind){
+    try { if (kind === 'crit' && OF.c.length < 24) OF.c.push({x, y, t:0});
+      // merge into a recent nearby number of the same kind when the screen is busy
+      if (nums.length > 28 && kind !== 'hurt' && kind !== 'mat' && typeof v === 'number'){ for (let i = nums.length - 1; i >= Math.max(0, nums.length - 30); i--){ const n = nums[i];
+          if (n.kind === kind && n.v != null && n.life > (kind === 'crit' ? 0.5 : 0.3) && Math.abs(n.x - x) < 30*S && Math.abs(n.y - y) < 30*S){ n.v += v; n.text = kind === 'crit' ? Math.round(n.v) + '!' : String(Math.round(n.v)); n.life = Math.max(n.life, kind === 'crit' ? 0.7 : 0.5); return; } } } } catch(err){}
+    const before = nums.length, r = _nm.apply(this, arguments); if (nums.length > 0 && (nums.length > before || nums.length === 70)) nums[nums.length - 1].v = typeof v === 'number' ? v : null; return r; }; }
+{ const _up = update; update = function(dt){ const r = _up.apply(this, arguments);
+    try { for (const d of OF.d){ d.t += dt; for (const p of d.ps){ p.x += p.vx*dt; p.y += p.vy*dt; p.rot += p.vr*dt;
+          if (d.st === 'splash' || d.st === 'bones' || d.st === 'scrap' || d.st === 'shatter'){ p.vy += 420*S*dt; p.vx *= 0.97; } else { p.vx *= 0.94; p.vy *= 0.94; } } }
+      OF.d = OF.d.filter(d => d.t < d.life); for (const c of OF.c) c.t += dt; OF.c = OF.c.filter(c => c.t < 0.16); } catch(err){}
+    return r; }; }
+function ofDraw(c){
+  for (const d of OF.d){ const k = d.t/d.life, a = 1 - k; c.save();
+    if (d.st === 'splash'){ c.globalAlpha = a*0.6; c.fillStyle = d.col; c.beginPath(); c.ellipse(d.x, d.y + d.r*0.6, d.r*(0.8 + 0.6*k), d.r*0.3*(0.8 + 0.6*k), 0, 0, TAU); c.fill(); }
+    if (d.st === 'smoke'){ c.globalAlpha = a*0.45; c.fillStyle = '#3A3550'; for (let i=0;i<3;i++){ c.beginPath(); c.arc(d.x + Math.sin(i*2.1)*d.r*0.5, d.y - k*30*S - i*6*S, d.r*(0.6 + k*0.9), 0, TAU); c.fill(); } }
+    if (d.st === 'embers'){ c.globalAlpha = a*0.35; c.fillStyle = '#2A2028'; c.beginPath(); c.arc(d.x, d.y - k*40*S, d.r*(0.5 + k), 0, TAU); c.fill(); }
+    for (const p of d.ps){ c.globalAlpha = Math.max(0, a); c.save(); c.translate(p.x, p.y); c.rotate(p.rot); const s = p.s*(d.st === 'smoke' ? 1 + k : 1);
+      if (d.st === 'splash'){ c.fillStyle = d.col; c.strokeStyle = C.line; c.lineWidth = 1.5; c.beginPath(); c.ellipse(0, 0, s, s*0.8, 0, 0, TAU); c.fill(); c.stroke(); c.fillStyle = 'rgba(255,255,255,.55)'; c.beginPath(); c.arc(-s*0.3, -s*0.3, s*0.25, 0, TAU); c.fill(); }
+      else if (d.st === 'bones'){ c.fillStyle = '#F1E4C8'; c.strokeStyle = C.line; c.lineWidth = 1.5; c.beginPath(); c.rect(-s, -s*0.22, s*2, s*0.44); c.arc(-s, 0, s*0.32, 0, TAU); c.arc(s, 0, s*0.32, 0, TAU); c.fill(); c.stroke(); }
+      else if (d.st === 'shatter'){ c.fillStyle = '#DFF6FF'; c.strokeStyle = '#6FA8D8'; c.lineWidth = 1.2; c.beginPath(); c.moveTo(0, -s); c.lineTo(s*0.7, s*0.6); c.lineTo(-s*0.6, s*0.4); c.closePath(); c.fill(); c.stroke(); }
+      else if (d.st === 'embers'){ c.fillStyle = k < 0.5 ? '#FFE07A' : '#FF6A2A'; c.beginPath(); c.arc(0, 0, s*0.45*(1 - k*0.5), 0, TAU); c.fill(); }
+      else if (d.st === 'scrap'){ c.fillStyle = '#9AA3B2'; c.strokeStyle = C.line; c.lineWidth = 1.5; c.beginPath(); c.rect(-s*0.6, -s*0.4, s*1.2, s*0.8); c.fill(); c.stroke(); if (k < 0.3){ c.fillStyle = '#FFE07A'; c.beginPath(); c.arc(s*0.8, 0, 2*S, 0, TAU); c.fill(); } }
+      else if (d.st === 'smoke'){ c.fillStyle = 'rgba(90,80,120,.6)'; c.beginPath(); c.arc(0, 0, s*0.7, 0, TAU); c.fill(); }
+      else { c.fillStyle = d.col; c.strokeStyle = C.line; c.lineWidth = 1.2; c.beginPath(); c.arc(0, 0, s*0.5, 0, TAU); c.fill(); c.stroke(); }
+      c.restore(); }
+    c.restore(); }
+  for (const f of OF.c){ const k = f.t/0.16, s = (10 + 16*k)*S; c.save(); c.globalAlpha = 1 - k; c.fillStyle = '#FFF4C8'; c.translate(f.x, f.y);
+    c.beginPath(); for (let i=0;i<8;i++){ const a = i*Math.PI/4, rr = i % 2 ? s*0.28 : s; c.lineTo(Math.cos(a)*rr, Math.sin(a)*rr); } c.closePath(); c.fill(); c.restore(); }
+}
+{ const _dr = draw; draw = function(now){ const r = _dr.apply(this, arguments); try { if (run && state !== 'menu') ofDraw(ctx); } catch(err){} return r; }; }
+{ const _ss = startStage; startStage = function(){ OF.d = []; OF.c = []; return _ss.apply(this, arguments); }; }
+
+// =====================================================================
+// FIRST-TIME TUTORIAL · "Your First Adventure"
+// A brand-new player is guided through the real game: welcome card, Arin the guide in Forgotten Forest, a glowing
+// trail along walkable ground to the real dungeon gate, the real dungeon panel (Normal, stage 1), then inside the
+// run: moving, defeating enemies, collecting XP, the first level-up, surviving, Extract / Push Deeper. After the
+// first run: a small starter reward, the Locker Room and the Overall Player Level. Nothing here is fake gameplay:
+// every step completes from what the player actually does.
+// State lives in save.tut, so it survives reloads. Players who already have progress never see it. It can be
+// skipped at any point and replayed from Settings -> Tutorial & Help. It only ever affects the local player.
+// =====================================================================
+const TUT_STEPS = ['welcome', 'guide', 'find', 'enter', 'fight', 'xp', 'upgrade', 'survive', 'decide', 'finish', 'locker', 'level', 'done'];
+const TUT_LIST = [['find', 'Find the Dungeon Entrance'], ['enter', 'Enter the Dungeon'], ['fight', 'Defeat Your First Enemies'], ['xp', 'Collect XP'], ['upgrade', 'Choose an Upgrade'], ['survive', 'Complete Your First Run']];
+const TUT = {run:null, path:null, pathT:0, grid:null, pan:null, el:null, card:null, lastHp:0};
+const tutI = s => TUT_STEPS.indexOf(s);
+function tutS(){ if (!save.tut || typeof save.tut !== 'object') save.tut = {}; return save.tut; }
+const tutActive = () => { const t = tutS(); return !t.done && !t.skipped && !!t.step; };
+const tutStep = () => tutActive() ? tutS().step : null;
+const tutTouch = () => { try { return matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window; } catch(e){ return false; } };
+function tutSet(step){ const t = tutS(); if (t.step === step) return; t.step = step; persist(); tutChime(step === 'done' ? 3 : 1); tutRender(); }
+function tutChime(k){ try { beep(660, 0.08, 'triangle', 0.03, 990); if (k > 1) setTimeout(() => beep(990, 0.12, 'triangle', 0.03, 1320), 110); if (k > 2) setTimeout(() => beep(1320, 0.2, 'triangle', 0.03, 1760), 240); } catch(e){} }
+
+// ---------- who gets it: brand-new players only (existing progress is never interrupted) ----------
+(function tutInit(){
+  const t = tutS();
+  if (t.v) { // resume: a reload mid-run loses the run, so the in-run steps fall back to "Enter the Dungeon"
+    if (!t.done && !t.skipped && tutI(t.step) >= tutI('fight') && tutI(t.step) <= tutI('decide')) t.step = 'enter';
+    return; }
+  const prog = (save.prog || []).reduce((a, b) => a + b, 0), kills = (save.stats && save.stats.kills) || 0, lv = (save.acct && save.acct.lv) || 1;
+  t.v = 1;
+  if (prog > 0 || kills > 40 || lv > 2 || (save.weapons || []).length > 1 || (save.history || []).length) { t.done = true; t.legacy = true; }
+  else t.step = 'welcome';
+  try { localStorage.setItem('swarmshot-save', JSON.stringify(save)); } catch(e){}
+})();
+
+// ---------- UI ----------
+{ const s = document.createElement('style'); s.textContent = `
+.tutcard{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%) scale(.96);opacity:0;z-index:93;width:min(440px,calc(100vw - 32px));background:linear-gradient(180deg,#1C1646,#120E30);border:2px solid #8B5CF6;border-radius:18px;padding:20px 20px 16px;color:#FFF6E6;font:500 15px/1.45 Rubik,system-ui,sans-serif;text-align:center;box-shadow:0 0 0 4px rgba(8,6,26,.6),0 18px 50px rgba(0,0,0,.55);transition:opacity .25s,transform .25s}
+.tutcard.on{opacity:1;transform:translate(-50%,-50%) scale(1)}
+.tutcard h2{margin:0 0 6px;font:900 24px Rubik,system-ui,sans-serif;letter-spacing:.04em;color:#FFE07A;text-shadow:0 3px 0 #08061A}
+.tutcard p{margin:6px 0;color:#E6E1FF}
+.tutcard .row{display:flex;gap:8px;justify-content:center;margin-top:12px;flex-wrap:wrap}
+.tutcard .btn{font-size:16px;padding:10px 20px}
+.tutskip{background:none;border:0;color:#A99CE0;font:600 12px Rubik,system-ui,sans-serif;text-decoration:underline;cursor:pointer;margin-top:8px;padding:4px}
+.tutcard .ln{opacity:0;transform:translateY(6px);transition:opacity .35s,transform .35s}.tutcard .ln.on{opacity:1;transform:none}
+#tutTrack{pointer-events:auto;max-width:230px;background:rgba(14,10,40,.88);border:2px solid #FFE07A;border-radius:12px;padding:7px 10px;text-align:left;font:500 12px/1.35 Rubik,system-ui,sans-serif;color:#E6E1FF;box-shadow:0 0 12px rgba(255,224,122,.25)}
+#tutTrack .th{font:900 10.5px Rubik,system-ui,sans-serif;letter-spacing:.12em;color:#B9A6FF}
+#tutTrack .tn{font:800 13px Rubik,system-ui,sans-serif;color:#FFE07A;margin:1px 0 4px}
+#tutTrack ul{list-style:none;margin:0;padding:0}#tutTrack li{display:flex;gap:6px;align-items:center;padding:1px 0;opacity:.6}
+#tutTrack li.cur{opacity:1;color:#fff;font-weight:700}#tutTrack li.ok{opacity:.85;color:#9BF6B0}
+#tutTrack li i{font-style:normal;width:14px;text-align:center}
+#tutTrack li.ok i{animation:tutpop .4s}
+@keyframes tutpop{0%{transform:scale(.3)}70%{transform:scale(1.4)}100%{transform:scale(1)}}
+#tutTrack .tskip{display:block;margin-top:5px;background:none;border:0;color:#9B8CE6;font:600 11px Rubik,system-ui,sans-serif;text-decoration:underline;cursor:pointer;padding:0}
+body.tutOn #owTrack{display:none!important}
+#tutRun{position:fixed;left:max(12px,env(safe-area-inset-left));top:calc(92px + env(safe-area-inset-top));z-index:40;max-width:min(270px,calc(100vw - 24px));background:rgba(14,10,40,.88);border:2px solid #FFE07A;border-radius:12px;padding:8px 11px;color:#E6E1FF;font:500 12.5px/1.4 Rubik,system-ui,sans-serif;pointer-events:auto;transition:opacity .3s}
+#tutRun .th{font:900 10.5px Rubik,system-ui,sans-serif;letter-spacing:.12em;color:#B9A6FF}#tutRun .tn{font:800 14px Rubik,system-ui,sans-serif;color:#FFE07A;margin:1px 0 3px}
+#tutRun .pr{margin-top:4px;color:#fff;font-weight:700}#tutRun .tskip{background:none;border:0;color:#9B8CE6;font:600 11px Rubik,system-ui,sans-serif;text-decoration:underline;cursor:pointer;padding:0;margin-top:4px}
+.tutcall{position:fixed;z-index:95;max-width:250px;background:#1C1646;border:2px solid #FFE07A;border-radius:12px;padding:8px 11px;color:#FFF6E6;font:500 12.5px/1.4 Rubik,system-ui,sans-serif;box-shadow:0 8px 24px rgba(0,0,0,.5);pointer-events:none}
+.tutcall b{display:block;color:#FFE07A;font:900 13px Rubik,system-ui,sans-serif;letter-spacing:.04em;margin-bottom:2px}
+.tuthl{outline:3px solid #FFE07A!important;outline-offset:3px;animation:tutglow 1.2s ease-in-out infinite}
+@keyframes tutglow{0%,100%{box-shadow:0 0 0 0 rgba(255,224,122,.0)}50%{box-shadow:0 0 18px 4px rgba(255,224,122,.55)}}
+#tutLvl{margin:4px auto 8px;max-width:520px;background:rgba(28,22,70,.92);border:2px solid #FFE07A;border-radius:12px;padding:8px 12px;color:#E6E1FF;font:500 13px/1.4 Rubik,system-ui,sans-serif}
+#tutLvl b{color:#FFE07A;font:900 14px Rubik,system-ui,sans-serif;letter-spacing:.06em}
+#lvl.tutlv .cards > *{animation:tutglow 1.4s ease-in-out infinite}
+.tuthelp{text-align:left}.tuthelp h3{color:#FFE07A;margin:12px 0 2px;font:800 15px Rubik,system-ui,sans-serif}.tuthelp p{margin:2px 0 6px}
+`; document.head.appendChild(s); }
+const tutEl = (tag, cls, txt) => { const e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; };
+function tutCard(title, lines, buttons, o={}){
+  tutCloseCard(); const c = tutEl('div', 'tutcard'); c.setAttribute('role', 'dialog'); c.appendChild(tutEl('h2', null, title));
+  const ls = lines.map(t => { const p = tutEl('p', 'ln', t); c.appendChild(p); return p; });
+  const row = tutEl('div', 'row'); for (const b of buttons){ const x = tutEl('button', 'btn' + (b.alt ? ' alt' : ''), b.label); x.addEventListener('click', e => { e.stopPropagation(); b.fn(); }); row.appendChild(x); } c.appendChild(row);
+  if (o.skip !== false && tutActive()){ const sk = tutEl('button', 'tutskip', 'Skip tutorial'); sk.addEventListener('click', e => { e.stopPropagation(); tutAskSkip(); }); c.appendChild(sk); }
+  c.addEventListener('pointerdown', e => e.stopPropagation()); c.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') e.stopPropagation(); });
+  document.body.appendChild(c); TUT.card = c; requestAnimationFrame(() => c.classList.add('on'));
+  ls.forEach((p, i) => setTimeout(() => p.classList.add('on'), 120 + i*220));
+  if (o.focus) setTimeout(() => { const f = row.querySelector('button'); if (f) f.focus({preventScroll:true}); }, 60);
+  if (o.auto) setTimeout(() => { if (TUT.card === c) tutCloseCard(); }, o.auto);
+  return c;
+}
+function tutCloseCard(){ if (TUT.card){ TUT.card.remove(); TUT.card = null; } }
+function tutAskSkip(){ confirmAsk('Skip the tutorial?', 'You can replay it later from Settings → Tutorial & Help. Nothing you have earned is touched.', 'Skip tutorial', () => {
+  const t = tutS(); t.skipped = true; t.step = null; persist(); tutCloseCard(); tutClear(); toast('check', 'Tutorial skipped', 'Replay it any time from Settings → Tutorial & Help.'); }); }
+function tutClear(){ document.body.classList.remove('tutOn'); for (const id of ['tutTrack', 'tutRun', 'tutLvl']){ const e = document.getElementById(id); if (e) e.remove(); } document.querySelectorAll('.tutcall').forEach(e => e.remove()); document.querySelectorAll('.tuthl').forEach(e => e.classList.remove('tuthl')); TUT.path = null; }
+
+// ---------- the welcome (on the menu, first load) ----------
+function tutWelcome(){
+  if (tutStep() !== 'welcome' || state !== 'menu' || TUT.card) return;
+  try { beep(523, 0.18, 'triangle', 0.03, 784); setTimeout(() => beep(784, 0.25, 'triangle', 0.03, 1046), 160); } catch(e){}
+  tutCard('WELCOME TO SWARM SHOT!', ['Explore dangerous worlds, collect powerful weapons, defeat bosses and become stronger!'], [{label:'Continue', fn:() => { tutCloseCard(); ensureAudio(); tutStartWorld(); }}], {focus:true});
+}
+function tutStartWorld(){
+  const s = owSave(); s.intro = true; s.region = 0; s.x = null; s.y = null; s.ret = null; tutSet('guide');
+  OW.session = false; owEnter(); setTimeout(() => { if (state === 'world' || state === 'owdlg') tutIntroPan(); }, 300);
+}
+setInterval(() => { try { if (tutStep() === 'welcome' && state === 'menu') tutWelcome(); } catch(e){} }, 700);
+
+// ---------- Arin, the Adventurer's Guide (beside the forest's starting waystone) ----------
+const ARIN = {name:"Arin, the Adventurer's Guide", look:{skin:'sunset', race:'human', head:null, hair:'h_ponytail', haircol:'hc_red', outfit:'o_blue'}, wob:2.7};
+function arinSpot(m){ if (!m || m.i !== 0) return null; if (m._arin) return m._arin; const st = m.ws.find(w => w.start) || m.ws[0];
+  // a free spot near the start waystone, clear of the other NPCs and the road signs
+  let best = null; for (const [dx, dy] of [[90, 95], [-70, 110], [140, 60], [60, -110], [-110, -60], [170, 130]]){ const p = owFindFree(m, st.x + dx, st.y + dy, 18); const far = m.npcs.every(n => Math.hypot(n.x - p.x, n.y - p.y) > 150); if (far){ best = p; break; } if (!best) best = p; }
+  return m._arin = {x:best.x, y:best.y}; }
+const arinShown = () => { const t = tutS(); return !t.done && !t.skipped && tutI(t.step) >= tutI('guide') && tutI(t.step) <= tutI('enter'); };
+LW_DRAWS.push(m => { const a = arinSpot(m); if (!a || !arinShown()) return null;
+  return [{y:a.y, x:a.x, fn:now => { const wave = (now % 4) < 1.2, k = (now % 4)/1.2;
+    const pose = wave ? {f:[0.55, -0.62 + 0.08*Math.sin(k*Math.PI*6)], b:[-0.2, 0.4], prop:null, pa:0, spark:0, lean:0, look:0} : {f:[0.25, 0.38], b:[-0.25, 0.38], prop:null, pa:0, spark:0, lean:0, look:0};
+    const bob = Math.sin(now*2.2)*1.5, face = OW.p && OW.p.x < a.x ? Math.PI - 0.2 : 0.2;
+    ctx.save(); ctx.fillStyle = 'rgba(255,224,122,.22)'; ctx.beginPath(); ctx.ellipse(a.x, a.y + 19, 22, 8, 0, 0, TAU); ctx.fill(); ctx.restore();
+    drawBlob(ctx, a.x, a.y + bob, 17, ARIN.look.skin, face, {}, null, now, 1, Object.assign({}, ARIN.look, {seed:ARIN.wob, role:'guide', pose}));
+    ctx.save(); ctx.font = '800 12px Rubik, system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(8,6,26,.85)'; ctx.strokeText('Arin', a.x, a.y + 36); ctx.fillStyle = '#FFE07A'; ctx.fillText('Arin', a.x, a.y + 36); ctx.restore();
+    // a speech bubble while there is something to say
+    if (tutStep() === 'guide'){ const y = a.y - 58 + Math.sin(now*3)*2; ctx.save(); ctx.fillStyle = '#FFF6E6'; ctx.strokeStyle = '#08061A'; ctx.lineWidth = 2.5; rrect(ctx, a.x - 15, y - 13, 30, 22, 9); ctx.fill(); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(a.x - 4, y + 9); ctx.lineTo(a.x, y + 16); ctx.lineTo(a.x + 4, y + 9); ctx.fill(); ctx.fillStyle = '#8B5CF6'; ctx.font = '900 15px Rubik, system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.fillText('!', a.x, y + 4); ctx.restore(); } }}]; });
+LW_INTS.push(m => { const a = arinSpot(m); if (!a || !arinShown()) return null; return [{x:a.x, y:a.y, r:90, label:'Arin', act:'Talk', npc:true, fn:() => tutArinTalk()}]; });
+function tutArinTalk(){
+  const first = tutStep() === 'guide';
+  owDialog({title:ARIN.name, npc:{look:ARIN.look, wob:ARIN.wob}, text:first ? ['Hey, adventurer! Welcome to Swarm Shot!', 'Your first challenge is waiting inside the dungeon.', "Follow the glowing trail. I'll show you where to go!"] : ['The dungeon is just along the trail. Walk up to the gate and step inside!'],
+    options:[{label:first ? "Let's go!" : 'On my way', fn:() => { owCloseDlg(); if (tutStep() === 'guide') tutSet('find'); }}], noClose:true});
+  try { beep(880, 0.05, 'square', 0.015, 990); setTimeout(() => beep(1046, 0.05, 'square', 0.015, 1175), 70); } catch(e){}
+}
+// a short look at the village, then Arin says hello (skippable by moving)
+function tutIntroPan(){ const m = OW.map; if (!m || m.i !== 0) return; TUT.pan = {t:0, from:{x:OW.p.x, y:OW.p.y}, to:{x:m.village.x, y:m.village.y}, dur:2.6}; }
+{ const _od = owDraw; owDraw = function(now){
+    const P0 = TUT.pan; let saved = null;
+    if (P0 && OW.p){ P0.t += 1/60; const k = P0.t/P0.dur, e = k < 0.38 ? swE(k/0.38) : k < 0.62 ? 1 : 1 - swE((k - 0.62)/0.38);
+      saved = {x:OW.cam.x, y:OW.cam.y}; OW.cam.x = P0.from.x + (P0.to.x - P0.from.x)*e*0.9; OW.cam.y = P0.from.y + (P0.to.y - P0.from.y)*e*0.9;
+      if (k >= 1 || (OW.p.moving && P0.t > 0.4)){ TUT.pan = null; TUT.greeted = true; if (tutStep() === 'guide') setTimeout(() => { if (state === 'world' && tutStep() === 'guide') tutArinTalk(); }, 250); } }
+    try { return _od.apply(this, arguments); } finally { if (saved){ OW.cam.x = saved.x; OW.cam.y = saved.y; } } }; }
+
+// ---------- the trail: A* over walkable ground to the real dungeon gate ----------
+const TG = 40;
+function tutGrid(m){
+  if (TUT.grid && TUT.grid.m === m) return TUT.grid;
+  const cw = Math.ceil(OW_W/TG), ch = Math.ceil(OW_H/TG), b = new Uint8Array(cw*ch);
+  for (let j=0;j<ch;j++) for (let i=0;i<cw;i++){ const x = i*TG + TG/2, y = j*TG + TG/2; b[j*cw + i] = (x < 60 || y < 60 || x > OW_W - 60 || y > OW_H - 60 || owBlocked(m, x, y, 12)) ? 1 : 0; }
+  return TUT.grid = {m, cw, ch, b};
+}
+function tutLine(m, a, b, r){ const d = Math.hypot(b[0] - a[0], b[1] - a[1]), n = Math.ceil(d/8); for (let k=1;k<n;k++){ if (owBlocked(m, a[0] + (b[0] - a[0])*k/n, a[1] + (b[1] - a[1])*k/n, r)) return false; } return true; }
+function tutStart(G, x, y, g){ const i0 = Math.floor(x/TG), j0 = Math.floor(y/TG); if (!G.b[j0*G.cw + i0] && tutLine(G.m, [x, y], [i0*TG + TG/2, j0*TG + TG/2], 12)) return [i0, j0];
+  let best = null, bs = Infinity; for (let dj=-3;dj<=3;dj++) for (let di=-3;di<=3;di++){ const i = i0 + di, j = j0 + dj; if (i < 0 || j < 0 || i >= G.cw || j >= G.ch || G.b[j*G.cw + i]) continue; const cx = i*TG + TG/2, cy = j*TG + TG/2;
+    if (!tutLine(G.m, [x, y], [cx, cy], 12)) continue; const sc = Math.hypot(cx - x, cy - y) + 0.35*Math.hypot(cx - g.x, cy - g.y); if (sc < bs){ bs = sc; best = [i, j]; } }
+  return best || tutFree(G, x, y); }
+function tutFree(G, x, y){ let i = Math.floor(x/TG), j = Math.floor(y/TG); if (!G.b[j*G.cw + i]) return [i, j];
+  for (let r=1;r<8;r++) for (let dj=-r;dj<=r;dj++) for (let di=-r;di<=r;di++){ const ii = i + di, jj = j + dj; if (ii < 0 || jj < 0 || ii >= G.cw || jj >= G.ch) continue; if (!G.b[jj*G.cw + ii]) return [ii, jj]; } return [i, j]; }
+function tutAStar(G, s, g){
+  const N = G.cw*G.ch, gs = new Float32Array(N).fill(1e9), came = new Int32Array(N).fill(-1), closed = new Uint8Array(N), heap = [];
+  const id = (i, j) => j*G.cw + i, H = (i, j) => { const dx = Math.abs(i - g[0]), dy = Math.abs(j - g[1]); return (dx + dy) + (1.4142 - 2)*Math.min(dx, dy); };
+  const push = (f, n) => { heap.push([f, n]); let k = heap.length - 1; while (k > 0){ const p = (k - 1) >> 1; if (heap[p][0] <= heap[k][0]) break; [heap[p], heap[k]] = [heap[k], heap[p]]; k = p; } };
+  const pop = () => { const top = heap[0], last = heap.pop(); if (heap.length){ heap[0] = last; let k = 0; for (;;){ const l = 2*k + 1, r = l + 1; let m = k; if (l < heap.length && heap[l][0] < heap[m][0]) m = l; if (r < heap.length && heap[r][0] < heap[m][0]) m = r; if (m === k) break; [heap[m], heap[k]] = [heap[k], heap[m]]; k = m; } } return top; };
+  const s0 = id(s[0], s[1]), g0 = id(g[0], g[1]); gs[s0] = 0; push(H(s[0], s[1]), s0); let it = 0;
+  while (heap.length && it++ < 60000){ const [, n] = pop(); if (closed[n]) continue; closed[n] = 1; if (n === g0) break;
+    const i = n % G.cw, j = (n / G.cw) | 0;
+    for (let dj=-1;dj<=1;dj++) for (let di=-1;di<=1;di++){ if (!di && !dj) continue; const ii = i + di, jj = j + dj; if (ii < 0 || jj < 0 || ii >= G.cw || jj >= G.ch) continue; const k = id(ii, jj); if (G.b[k] || closed[k]) continue;
+      if (di && dj && (G.b[id(i + di, j)] || G.b[id(i, j + dj)])) continue;   // no cutting corners past obstacles
+      const c = gs[n] + (di && dj ? 1.4142 : 1); if (c < gs[k]){ gs[k] = c; came[k] = n; push(c + H(ii, jj), k); } } }
+  if (came[g0] < 0 && s0 !== g0) return null;
+  const out = []; for (let n = g0; n >= 0; n = came[n]){ out.push([(n % G.cw)*TG + TG/2, ((n / G.cw) | 0)*TG + TG/2]); if (n === s0) break; } return out.reverse();
+}
+// keep only the corners that matter (a straight line between two kept points never crosses a blocked cell)
+function tutSmooth(G, pts){ if (!pts || pts.length < 3) return pts; const clear = (a, b) => tutLine(G.m, a, b, 16);
+  const out = [pts[0]]; let a = 0; while (a < pts.length - 1){ let b = pts.length - 1; while (b > a + 1 && !clear(pts[a], pts[b])) b--; out.push(pts[b]); a = b; } return out; }
+function tutTarget(m){ const d = m.dungeon; return {x:d.door.x, y:d.door.y + 70}; }
+function tutPathUpdate(){
+  const m = OW.map; if (!m || !OW.p || m.i !== 0) { TUT.path = null; return; }
+  const now = performance.now(); if (TUT.path && now - TUT.pathT < 1500){ // off the trail by a lot: recompute now
+    let near = Infinity; for (const p of TUT.path) near = Math.min(near, Math.hypot(p[0] - OW.p.x, p[1] - OW.p.y)); if (near < 220) return; }
+  TUT.pathT = now; const G = tutGrid(m), T = tutTarget(m), raw = tutAStar(G, tutStart(G, OW.p.x, OW.p.y, T), tutFree(G, T.x, T.y));
+  TUT.path = raw ? tutSmooth(G, raw) : null; if (TUT.path){ TUT.path.unshift([OW.p.x, OW.p.y]); TUT.path.push([T.x, T.y]); }
+}
+// drawn on the ground, under every prop: flowing golden motes along the route
+LW_DRAWS.push(m => { const st = tutStep(); if (!(st === 'find' || st === 'enter') || m.i !== 0) return null;
+  return [{y:-1e9, x:0, fn:now => { const P = TUT.path; if (!P || P.length < 2) return; ctx.save();
+    let acc = 0; const sp = 26, off = (now*60) % sp;
+    ctx.lineCap = 'round'; ctx.strokeStyle = 'rgba(255,214,90,.16)'; ctx.lineWidth = 16; ctx.beginPath(); ctx.moveTo(P[0][0], P[0][1]); for (const p of P) ctx.lineTo(p[0], p[1]); ctx.stroke();
+    for (let i=1;i<P.length;i++){ const [x0, y0] = P[i - 1], [x1, y1] = P[i], L = Math.hypot(x1 - x0, y1 - y0);
+      for (let d = (sp - (acc - off) % sp) % sp; d < L; d += sp){ const t = acc + d; if (t < 40) continue; const x = x0 + (x1 - x0)*d/L, y = y0 + (y1 - y0)*d/L, k = Math.min(1, (t - 40)/120);
+        ctx.globalAlpha = 0.85*k; ctx.fillStyle = '#FFE07A'; ctx.beginPath(); ctx.arc(x, y, 4.2, 0, TAU); ctx.fill(); ctx.globalAlpha = 0.25*k; ctx.beginPath(); ctx.arc(x, y, 9, 0, TAU); ctx.fill(); }
+      acc += L; }
+    // the gate outline once you are close
+    const T = m.dungeon.door, dd = Math.hypot(OW.p.x - T.x, OW.p.y - T.y); if (dd < 700){ const a = 0.5 + 0.3*Math.sin(now*4); ctx.globalAlpha = a; ctx.strokeStyle = '#FFE07A'; ctx.lineWidth = 4; ctx.beginPath(); ctx.ellipse(T.x, T.y + 10, 70, 26, 0, 0, TAU); ctx.stroke(); }
+    ctx.restore(); }}]; });
+// the existing goal chevron and map marker point at the tutorial target while it runs
+{ const _ng = owNextGoal; owNextGoal = function(m){ const st = tutStep(); if ((st === 'find' || st === 'enter' || st === 'guide') && m && m.i === 0){ const T = tutTarget(m); return {title:'Find the Dungeon Entrance', sub:'Follow the glowing trail', x:T.x, y:T.y}; } return _ng.apply(this, arguments); }; }
+{ const _mk = owMarkers; owMarkers = function(m){ const out = _mk.apply(this, arguments); const st = tutStep(); if ((st === 'find' || st === 'enter') && m.i === 0){ if (!out.some(x => x.k === 'dungeon')) out.push({k:'dungeon', x:m.dungeon.x, y:m.dungeon.y + 40, name:m.D.dungeon.name}); out.push({k:'quest', x:m.dungeon.x, y:m.dungeon.y + 40, name:'Tutorial: the dungeon entrance', q:true}); } return out; }; }
+
+// ---------- the open-world tracker ----------
+function tutRenderWorld(){
+  const st = tutStep(), inW = typeof OW !== 'undefined' && OW.session && OW.map && ['world', 'owdlg', 'owpanel', 'owmap'].includes(state);
+  let tr = document.getElementById('tutTrack');
+  const showList = st && tutI(st) >= tutI('find') && tutI(st) <= tutI('decide');
+  if (!inW || !showList){ if (tr) tr.remove(); document.body.classList.remove('tutOn'); return; }
+  const anchor = document.getElementById('owTrack'); if (!anchor) return;
+  if (!tr){ tr = tutEl('div'); tr.id = 'tutTrack'; anchor.parentNode.insertBefore(tr, anchor.nextSibling); for (const t of ['pointerdown', 'click']) tr.addEventListener(t, e => e.stopPropagation()); }
+  document.body.classList.add('tutOn');
+  const cur = tutI(st), T = OW.map && OW.map.i === 0 ? tutTarget(OW.map) : null, dist = T && OW.p ? Math.round(Math.hypot(T.x - OW.p.x, T.y - OW.p.y)/10) : null;
+  const n = st === 'find' ? 1 : 2, title = st === 'find' ? 'Find the Dungeon Entrance' + (dist != null ? ` · ${dist} m` : '') : st === 'enter' ? 'Enter the Forgotten Forest Dungeon' : 'Back to the dungeon';
+  const sig = st + '|' + title; if (tr._sig === sig) return; tr._sig = sig; tr.innerHTML = '';
+  tr.append(tutEl('div', 'th', 'YOUR FIRST ADVENTURE'), tutEl('div', 'tn', `STEP ${n} · ${title}`));
+  const ul = tutEl('ul'); for (const [k, nm] of TUT_LIST){ const i = tutI(k), li = tutEl('li', i < cur ? 'ok' : i === cur ? 'cur' : ''); li.append(tutEl('i', null, i < cur ? '✓' : i === cur ? '▸' : '○'), document.createTextNode(nm)); ul.appendChild(li); } tr.appendChild(ul);
+  const sk = tutEl('button', 'tskip', 'Skip tutorial'); sk.addEventListener('click', e => { e.stopPropagation(); tutAskSkip(); }); tr.appendChild(sk);
+}
+// ---------- in a run ----------
+function tutRenderRun(){
+  const st = tutStep(), inRun = run && ['play', 'paused', 'levelup', 'chest'].includes(state) && !run.wbFight;
+  let box = document.getElementById('tutRun');
+  if (!inRun || !['fight', 'xp', 'survive'].includes(st)){ if (box) box.remove(); return; }
+  if (!box){ box = tutEl('div'); box.id = 'tutRun'; document.body.appendChild(box); for (const t of ['pointerdown', 'click', 'touchstart']) box.addEventListener(t, e => e.stopPropagation()); }
+  const R = TUT.run || {}; let n, head, txt, pr = '';
+  if (st === 'fight'){ n = 3; head = 'Move Around and Defeat Enemies'; txt = 'Your weapons attack automatically. Move to avoid enemies and stay alive!  ' + (tutTouch() ? 'Drag anywhere on the screen to move.' : 'Move with WASD or the arrow keys.');
+    pr = `${(R.moved || 0) >= 260 ? '✓' : '○'} Move around   ${Math.min(5, R.kills || 0) >= 5 ? '✓' : '○'} Defeat enemies ${Math.min(5, R.kills || 0)}/5`; }
+  else if (st === 'xp'){ n = 4; head = 'Collect XP Gems'; txt = 'Defeated enemies drop blue XP gems. Collect them to level up during your run!'; pr = `XP ${Math.floor(run.xp)}/${run.need} to your first level-up`; }
+  else { n = 5; head = 'Survive the Enemy Waves'; txt = R.tip || 'Keep moving, collect XP and build stronger weapons!'; pr = run.endless ? '' : `Survive until the timer reaches 0:00`; }
+  const sig = [st, txt, pr].join('|'); if (box._sig === sig) return; box._sig = sig; box.innerHTML = '';
+  box.append(tutEl('div', 'th', 'TUTORIAL — STEP ' + n), tutEl('div', 'tn', head), tutEl('div', null, txt)); if (pr) box.appendChild(tutEl('div', 'pr', pr));
+  const sk = tutEl('button', 'tskip', 'Skip tutorial'); sk.addEventListener('click', e => { e.stopPropagation(); tutAskSkip(); }); box.appendChild(sk);
+}
+function tutRender(){ try { tutRenderWorld(); tutRenderRun(); } catch(err){ console.error(err); } }
+setInterval(tutRender, 250);
+
+// ---------- step logic ----------
+setInterval(() => { try {
+  const st = tutStep(); if (!st) return;
+  if (st === 'guide' && state === 'world' && OW.map && OW.map.i === 0 && !TUT.pan && !TUT.greeted){ TUT.greeted = true; setTimeout(() => { if (state === 'world' && tutStep() === 'guide') tutArinTalk(); }, 400); }
+  if ((st === 'find' || st === 'enter') && OW.session && OW.map){ if (OW.map.i === 0) tutPathUpdate(); else TUT.path = null; }
+  if (st === 'find' && state === 'world' && OW.map && OW.map.i === 0){ const T = tutTarget(OW.map); if (Math.hypot(T.x - OW.p.x, T.y - OW.p.y) < 230){ tutSet('enter');
+      tutCard('DUNGEON FOUND!', ['Enter dungeons to fight enemies, collect XP, earn rewards and unlock stronger equipment.', 'Walk up to the gate and step inside.'], [{label:'Got it', fn:() => tutCloseCard()}], {auto:7000}); } }
+  // the in-run steps
+  if (run && state === 'play' && !run.wbFight){ const R = TUT.run || (TUT.run = {moved:0, kills:0, k0:run.kills, lx:P.x, ly:P.y});
+    const dm = Math.hypot(P.x - R.lx, P.y - R.ly); if (dm < 200*S) R.moved += dm/S; R.lx = P.x; R.ly = P.y; R.kills = run.kills - R.k0;
+    if (st === 'fight' && R.moved >= 260 && R.kills >= 5) tutSet('xp');
+    if (st === 'survive'){ R.tipT = (R.tipT || 0) + 0.25; const tips = ['Red circles and lines on the ground are warnings: step out of them!', 'Your health is the red bar at the top left. Getting hit lowers it.', 'Pick upgrades for the weapon you like: each level makes it noticeably stronger.', 'Keep moving, collect XP and build stronger weapons!']; R.tip = tips[Math.floor(R.tipT/7) % tips.length]; } }
+} catch(err){ console.error(err); } }, 250);
+// entering the real dungeon: highlight Normal, stage 1 and the Enter button in the real panel
+{ const _dp = owDungeonPanel; owDungeonPanel = function(m){ if (TUT.card && tutActive()) tutCloseCard(); const r = _dp.apply(this, arguments);
+    try { if ((tutStep() === 'enter' || tutStep() === 'find') && m.i === 0){ if (tutStep() === 'find') tutSet('enter');
+        const ov = document.getElementById('owPanel'); const nb = [...ov.querySelectorAll('.owdiff .tab')].find(b => /Normal/.test(b.textContent)), s1 = ov.querySelector('.owstages .node[data-s="1"]'), go = ov.querySelector('.owbtnrow .btn.big');
+        for (const x of [nb, s1, go]) if (x) x.classList.add('tuthl');
+        if (s1 && !s1.disabled) s1.click();
+        const note = tutEl('div', 'tutcall'); note.style.position = 'static'; note.style.margin = '0 0 10px'; note.style.maxWidth = 'none'; note.innerHTML = '<b>TUTORIAL — STEP 2</b>';
+        note.appendChild(document.createTextNode('Start with Normal difficulty and stage 1. You can try harder challenges as you become stronger! Then press ENTER DUNGEON.'));
+        const body = ov.querySelector('.owpb'); body.insertBefore(note, body.firstChild); } } catch(err){ console.error(err); }
+    return r; }; }
+{ const _ss = startStage; startStage = function(w, s, endless){ if (TUT.card && tutActive()) tutCloseCard(); const r = _ss.apply(this, arguments);
+    try { if (tutStep() === 'enter' && !(run && run.wbFight)){ TUT.run = null; tutSet('fight'); } } catch(e){} return r; }; }
+// forgiving first fight (solo only, and only during the first three in-run steps): fewer, gentler enemies
+{ const _sp = spawnTick; spawnTick = function(dt){ const st = tutStep(); if ((st === 'fight' || st === 'xp' || st === 'upgrade') && run && !(typeof DUO !== 'undefined' && DUO.on)) return _sp.call(this, dt*0.55); return _sp.apply(this, arguments); }; }
+{ const _h = hurt; hurt = function(raw){ const st = tutStep(); if ((st === 'fight' || st === 'xp') && run && !(typeof DUO !== 'undefined' && DUO.on)) return _h.call(this, raw*0.6); return _h.apply(this, arguments); }; }
+// gems: little gold arrows over the nearest ones
+{ const _d = draw; draw = function(now){ const r = _d.apply(this, arguments);
+    try { if (tutStep() === 'xp' && run && state === 'play' && gems.length){ const near = gems.slice().sort((a, b) => ((a.x - P.x)**2 + (a.y - P.y)**2) - ((b.x - P.x)**2 + (b.y - P.y)**2)).slice(0, 3);
+        ctx.save(); ctx.fillStyle = '#FFE07A'; ctx.strokeStyle = '#08061A'; ctx.lineWidth = 2; for (const g of near){ const y = g.y - 18*S - Math.abs(Math.sin(now*5))*6*S; ctx.beginPath(); ctx.moveTo(g.x, y + 8*S); ctx.lineTo(g.x - 6*S, y); ctx.lineTo(g.x + 6*S, y); ctx.closePath(); ctx.fill(); ctx.stroke(); } ctx.restore(); } } catch(e){}
+    return r; }; }
+// the first level-up: explain the cards; the choice is the player's
+{ const _ol = openLevelUp; openLevelUp = function(){ const r = _ol.apply(this, arguments);
+    try { const st = tutStep(); if (st === 'xp' || st === 'fight'){ tutSet('upgrade'); const lv = document.getElementById('lvl'); lv.classList.add('tutlv'); let n = document.getElementById('tutLvl');
+        if (!n){ n = tutEl('div'); n.id = 'tutLvl'; lv.insertBefore(n, document.getElementById('cards')); }
+        n.innerHTML = '<b>CHOOSE YOUR FIRST UPGRADE</b><br>'; n.appendChild(document.createTextNode('Leveling up lets you improve your weapons or unlock new abilities! Each card shows its name, the level it goes to and what it does. Pick whichever you like.')); } } catch(err){ console.error(err); }
+    return r; }; }
+setInterval(() => { try { if (tutStep() === 'upgrade' && run && state === 'play'){ const lv = document.getElementById('lvl'); lv.classList.remove('tutlv'); const n = document.getElementById('tutLvl'); if (n) n.remove();
+    ring(P.x, P.y, 60*S, '#FFE07A', 0.6); burst(P.x, P.y, '#FFE07A', 18, 1); toast('check', 'Upgrade chosen!', 'Your build just got stronger. Every level-up is another choice like this.'); tutSet('survive'); } } catch(e){} }, 150);
+// mini-boss: one short explanation the first time one appears (tutorial or not, once ever)
+{ const _sm = spawnMob; spawnMob = function(role){ const e = _sm.apply(this, arguments);
+    try { const t = tutS(); if (role === 'mini' && !t.mb && !t.legacy && run && !run.wbFight){ t.mb = true; persist(); banner('MINI-BOSS INCOMING!', 'Watch its warning markers and keep moving', '#FF8A3A');
+        toast('boss', 'Mini-bosses', 'They hit harder and have a health bar at the top. Red markers on the ground warn you before big attacks: step out of them.'); } } catch(err){}
+    return e; }; }
+// stage cleared: explain Extract and Push Deeper on the real buttons
+{ const _sc = stageClear; stageClear = function(){ const r = _sc.apply(this, arguments);
+    try { if (tutStep() === 'survive'){ tutSet('decide'); setTimeout(tutDecide, 1900); } } catch(e){} return r; }; }
+function tutDecide(){
+  if (tutStep() !== 'decide' || document.getElementById('clearOv').hidden) return;
+  const ex = document.getElementById('extractBtn'), pu = document.getElementById('pushBtn'); ex.classList.add('tuthl'); pu.classList.add('tuthl');
+  const call = (btn, title, txt) => { const c = tutEl('div', 'tutcall'); c.innerHTML = '<b></b>'; c.querySelector('b').textContent = title; c.appendChild(document.createTextNode(txt)); document.body.appendChild(c);
+    const place = () => { if (!c.isConnected) return; const r = btn.getBoundingClientRect(); if (!r.width || document.getElementById('clearOv').hidden){ c.remove(); return; } const w = c.offsetWidth, h = c.offsetHeight;
+      let x = r.left + r.width/2 - w/2, y = r.top - h - 10; if (y < 8) y = r.bottom + 10; c.style.left = Math.max(8, Math.min(innerWidth - w - 8, x)) + 'px'; c.style.top = y + 'px'; requestAnimationFrame(place); }; place(); };
+  call(ex, 'EXTRACT', 'Leave safely and keep the rewards you have earned.'); call(pu, 'PUSH DEEPER', 'Continue your run and face harder enemies for greater rewards. It also pulls in every XP gem and coin left on the ground.');
+}
+{ const _e = extract; extract = function(){ if (tutStep() === 'decide'){ tutS().step = 'finish'; persist(); tutClearCalls(); } return _e.apply(this, arguments); }; }
+{ const _p = pushDeeper; pushDeeper = function(){ if (tutStep() === 'decide'){ tutS().step = 'finish'; persist(); tutClearCalls(); toast('check', 'Pushing deeper!', 'Your first run counts as complete. Extract whenever you want to keep your rewards.'); } return _p.apply(this, arguments); }; }
+document.getElementById('extractBtn').addEventListener('click', () => { if (tutStep() === 'decide'){ tutS().step = 'finish'; persist(); tutClearCalls(); } }, true);
+document.getElementById('pushBtn').addEventListener('click', () => { if (tutStep() === 'decide'){ tutS().step = 'finish'; persist(); tutClearCalls(); } }, true);
+function tutClearCalls(){ document.querySelectorAll('.tutcall').forEach(e => e.remove()); document.querySelectorAll('#clearOv .tuthl').forEach(e => e.classList.remove('tuthl')); }
+// the first run is over when the player is back in the world or the menu (extracted, pushed on and finished, or fell)
+setInterval(() => { try {
+  const st = tutStep(); if (!st || TUT.card) return;
+  const back = !run && (state === 'world' || state === 'menu');
+  if (back && ['fight', 'xp', 'upgrade', 'survive', 'decide', 'finish'].includes(st)) tutComplete(st !== 'finish');
+  if (st === 'locker' && back && !TUT.lockerAsked){ TUT.lockerAsked = true; tutLocker(); }
+} catch(err){ console.error(err); } }, 500);
+function tutComplete(fell){
+  const t = tutS(); if (t.rewarded) { tutSet('locker'); return; }
+  t.rewarded = true; save.coins += 300; persist(); updateCoinLabels();
+  try { tutChime(3); if (state === 'world' && OW.p) for (let i=0;i<3;i++) setTimeout(() => { owNum && owNum(OW.p.x, OW.p.y - 50 - i*12, '★', '#FFE07A'); }, i*120); } catch(e){}
+  tutSet('locker'); TUT.lockerAsked = true;
+  tutCard('TUTORIAL COMPLETE!', [fell ? 'Every adventurer falls sometimes. You learned the basics, and that is what counts.' : "You're ready to begin your adventure!", 'Starter reward: +300 coins'],
+    [{label:'Continue', fn:() => { tutCloseCard(); tutLocker(); }}], {skip:false});
+}
+function tutLocker(){
+  tutCard('YOUR EQUIPMENT', ['Visit the Locker Room to equip weapons, armor, pets, Powers and other upgrades!'], [{label:'Open the Locker Room', fn:() => { tutCloseCard(); TUT.lockTour = true; if (owIn()) { owLeave(); OW.session = false; } openLocker('loadout'); setTimeout(tutLockerTour, 300); }}, {label:'Later', alt:true, fn:() => { tutCloseCard(); tutLevel(); }}], {skip:false});
+}
+function tutLockerTour(){
+  const tabs = [...document.querySelectorAll('#locker .tab, #locker button')].filter(b => /^(Weapons|Armor|Pets|Powers|Forge|Upgrades)/.test(b.textContent.trim()));
+  tabs.forEach(b => b.classList.add('tuthl'));
+  const c = tutEl('div', 'tutcall'); c.style.left = '50%'; c.style.transform = 'translateX(-50%)'; c.style.top = 'calc(70px + env(safe-area-inset-top))'; c.style.maxWidth = 'min(520px, calc(100vw - 24px))'; c.style.pointerEvents = 'auto';
+  c.innerHTML = '<b>THE LOCKER ROOM</b>Weapons: your starting weapon. Armor: helmet, chest, gloves, boots. Pets: a companion with its own ability. Powers: a special move on the power button. Forge: upgrade and craft gear. Look around as long as you like.';
+  const ok = tutEl('button', 'btn', 'Got it'); ok.style.cssText = 'display:block;margin:8px auto 0;font-size:14px;padding:8px 16px'; ok.addEventListener('click', () => { c.remove(); tabs.forEach(b => b.classList.remove('tuthl')); tutLevel(); }); c.appendChild(ok); document.body.appendChild(c);
+}
+function tutLevel(){
+  const pill = document.getElementById('acctPill'); if (pill) pill.classList.add('tuthl');
+  tutCard('YOUR PLAYER LEVEL', ['Run XP makes you stronger during a dungeon, and resets when the run ends.', 'Overall Player Level tracks your permanent progression and unlocks new regions. Each region needs a certain Player Level before you can enter it.'],
+    [{label:"Let's play!", fn:() => { tutCloseCard(); if (pill) pill.classList.remove('tuthl'); const t = tutS(); t.done = true; t.step = 'done'; persist(); tutClear(); toast('check', 'Have fun!', 'Settings → Tutorial & Help has a refresher any time.'); }}], {skip:false});
+}
+
+// ---------- Settings -> Tutorial & Help ----------
+const TUT_HELP = [
+  ['Combat', 'Your weapons fire on their own at the nearest enemies. Your job is to move: dodge enemies, step out of red warning markers and pick up the blue XP gems. Press the power button (Space) for your Power, and dash with Shift.'],
+  ['Weapons and Evolutions', 'You start each run with the weapon you equip in the Locker Room. Level-ups offer new weapons (up to six at once) and upgrades. When two matching upgrades are both high enough, they evolve into a much stronger effect. The Codex lists what you have discovered.'],
+  ['Fusions', 'Some pairs of weapons can merge into one Fusion weapon. When it is possible, the game asks whether to fuse now or keep both.'],
+  ['Powers and Domain Expansions', 'A Power is a special move you equip in the Locker Room and trigger yourself. Domain Expansions are the rarest Powers: they reshape the battlefield around you for a few seconds.'],
+  ['Dungeon progression', 'Each region has a dungeon with 10 stages. Stages 3, 6 and 9 offer a curse, 5 and 8 have a mini-boss and stage 10 is the boss. After clearing a stage choose Extract (leave with your rewards) or Push Deeper (harder enemies, bigger rewards). Corruption rises the longer you stay.'],
+  ['Player Level and regions', 'Run XP levels you up inside one run. Overall Player Level is permanent: it rises from everything you do and unlocks new regions, together with beating the previous dungeon boss.'],
+];
+function tutHelp(){ tutCard('TUTORIAL & HELP', [], [{label:'Close', alt:true, fn:() => tutCloseCard()}], {skip:false}); const c = TUT.card, box = tutEl('div', 'tuthelp');
+  for (const [h, p] of TUT_HELP){ box.append(tutEl('h3', null, h), tutEl('p', null, p)); } c.insertBefore(box, c.querySelector('.row')); c.style.maxHeight = '80vh'; c.style.overflowY = 'auto'; }
+function tutReplay(){ const t = tutS(); t.done = false; t.skipped = false; t.legacy = false; t.step = 'welcome'; t.rewarded = t.rewarded || false; TUT.greeted = false; TUT.lockerAsked = false; persist(); navHome(); setTimeout(tutWelcome, 300); }
+{ const _rs = renderSettings; renderSettings = function(){ const r = _rs.apply(this, arguments);
+    try { const body = document.getElementById('setBody'); const sec = tutEl('div', 'setrow'); sec.style.cssText = 'display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between';
+      const lab = tutEl('div'); lab.append(tutEl('b', null, 'Tutorial & Help'), tutEl('br'), tutEl('small', null, 'Basics, weapons, Fusions, Powers and dungeons. Or play the first-time tutorial again (your progress is kept).'));
+      const bs = tutEl('div'); bs.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap';
+      const h = tutEl('button', 'btn alt', 'How to play'); h.addEventListener('click', tutHelp); const rp = tutEl('button', 'btn alt', 'Replay tutorial'); rp.addEventListener('click', () => confirmAsk('Replay the tutorial?', 'You will be taken to Forgotten Forest and guided through your first dungeon again. Nothing you own is changed.', 'Replay', tutReplay));
+      for (const b of [h, rp]){ b.style.fontSize = '14px'; b.style.padding = '8px 14px'; bs.appendChild(b); } sec.append(lab, bs); body.insertBefore(sec, body.firstChild); } catch(err){ console.error(err); }
+    return r; }; }
+
+// the tutorial already explains these, so the one-time coach cards for them wait until it is over
+{ const _st = showTip; showTip = function(id){ if (tutActive() && (id === 'run' || id === 'levelup')) return; return _st.apply(this, arguments); }; }
+
 
 resize(); setMute(muted); updateCoinLabels();
 requestAnimationFrame(loop);
